@@ -13,6 +13,8 @@ pulseaudio -D --system --disallow-exit --disallow-module-loading
 touch xvfb.log
 chmod 777 xvfb.log
 
+
+
 xvfb-run-safe --server-args="-ac -screen 0 ${RESOLUTION}x24 -noreset" google-chrome \
     --kiosk \
     --start-maximized \
@@ -24,7 +26,7 @@ xvfb-run-safe --server-args="-ac -screen 0 ${RESOLUTION}x24 -noreset" google-chr
     --window-size=$WIDTH,$HEIGHT \
     --window-position=0,0 \
     --no-first-run \
-    --disable-features=Translate \
+    --disable-features=Translate,TranslateUI,OfferTranslateUI,TranslateBubbleUI,WebRtcHideLocalIpsWithMdns \
     --ignore-certificate-errors \
     --disable-dev-shm-usage \
     --autoplay-policy=no-user-gesture-required \
@@ -34,7 +36,6 @@ xvfb-run-safe --server-args="-ac -screen 0 ${RESOLUTION}x24 -noreset" google-chr
     --disable-component-update \
     --disable-background-networking \
     --disable-default-apps \
-    --flag-switches-begin --disable-features=WebRtcHideLocalIpsWithMdns --flag-switches-end \
     $DEBUG_CHROME_FLAGS $URL &>xvfb.log &
 
 until pids=$(pidof Xvfb); do

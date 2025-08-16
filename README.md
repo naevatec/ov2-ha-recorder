@@ -13,8 +13,8 @@ Recording recording = openVidu.startRecording(openViduSessionId, properties);
 ## For the impatient
 To quickly try this service just do the following: ssh into your OpenVidu server and clone this repository, then execute the replace_recorder.sh that will do:
 * Remove the non-HA OpenVidu Docker image
-* Pull the new HA recorder for OpenVidu Docker image and tag it as the non-HA one
-* Restart your OpenVidu server normally, then the HA recorder image will be used
+* Build the new HA recorder for OpenVidu Docker image and tag it as the non-HA one
+* Is not necessary to restart your OpenVidu, as soon as the new image is ready, this will be used by OpenVidu
 
 
 ## HA Recorder
