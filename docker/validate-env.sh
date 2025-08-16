@@ -45,33 +45,30 @@ load_env_file() {
 
 # Function to show .env template information (but not create the file)
 show_env_template() {
-    print_status "$BLUE" "Required .env file format:"
+    print_status "$BLUE" "Required .env file format (based on your HA Recorder configuration):"
     cat << 'EOF'
-# MinIO Configuration
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin123
-MINIO_BUCKET_NAME=recordings
+# HA Recorder Configuration
+HA_RECORDING_STORAGE=local
+CHUNK_FOLDER=/local-chunks
+CHUNK_TIME_SIZE=20
 
-# OpenVidu Recording Image Configuration
-TAG=latest
-
-# Network Configuration - CHANGE THESE VALUES
-# Set your actual private IP address
-PRIVATE_IP=192.168.1.100
-
-# MinIO Ports
+# MinIO/S3 Configuration
+# CRITICAL: HA_AWS_S3_SERVICE_ENDPOINT must match http://YOUR_PRIVATE_IP:MINIO_API_PORT
+HA_AWS_S3_SERVICE_ENDPOINT=http://172.31.0.96:9000
+HA_AWS_S3_BUCKET=ov-recordings
+HA_AWS_ACCESS_KEY=naeva_minio
+HA_AWS_SECRET_KEY=N43v4t3c_M1n10
 MINIO_API_PORT=9000
-MINIO_CONSOLE_PORT=9001
 
-# Home Assistant AWS S3 Service Endpoint
-# CRITICAL: This MUST match http://${PRIVATE_IP}:${MINIO_API_PORT}
-HA_AWS_S3_SERVICE_ENDPOINT=http://192.168.1.100:9000
+# Additional Configuration
+TAG=latest
+MINIO_CONSOLE_PORT=9001
 EOF
     echo
     print_status "$YELLOW" "⚠️  IMPORTANT: Make sure to:"
-    echo "   1. Replace 192.168.1.100 with your actual private IP"
+    echo "   1. Replace 172.31.0.96 with your actual private IP"
     echo "   2. Ensure HA_AWS_S3_SERVICE_ENDPOINT matches http://YOUR_PRIVATE_IP:MINIO_API_PORT"
-    echo "   3. Use strong passwords in production"
+    echo "   3. Use strong credentials in production"
 }
 
 # Function to validate IP address format
@@ -106,8 +103,17 @@ validate_variables() {
     
     print_status "$BLUE" "🔍 Validating environment variables..."
     
+    # Extract private IP from HA_AWS_S3_SERVICE_ENDPOINT
+    if [ -n "$HA_AWS_S3_SERVICE_ENDPOINT" ]; then
+        PRIVATE_IP=$(echo "$HA_AWS_S3_SERVICE_ENDPOINT" | sed -n 's|^http://\([^:]*\):.*|\1|p')
+        if [ -z "$PRIVATE_IP" ]; then
+            print_status "$RED" "❌ Cannot extract IP from HA_AWS_S3_SERVICE_ENDPOINT: $HA_AWS_S3_SERVICE_ENDPOINT"
+            ((errors++))
+        fi
+    fi
+    
     # Check required variables exist
-    local required_vars=("PRIVATE_IP" "MINIO_API_PORT" "HA_AWS_S3_SERVICE_ENDPOINT" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "MINIO_BUCKET_NAME")
+    local required_vars=("HA_AWS_S3_SERVICE_ENDPOINT" "MINIO_API_PORT" "HA_AWS_S3_BUCKET" "HA_AWS_ACCESS_KEY" "HA_AWS_SECRET_KEY")
     
     for var in "${required_vars[@]}"; do
         if [ -z "${!var}" ]; then
@@ -120,9 +126,9 @@ validate_variables() {
         return 1
     fi
     
-    # Validate IP address format
-    if ! validate_ip "$PRIVATE_IP"; then
-        print_status "$RED" "❌ PRIVATE_IP '$PRIVATE_IP' is not a valid IP address"
+    # Validate IP address format (extracted from endpoint)
+    if [ -n "$PRIVATE_IP" ] && ! validate_ip "$PRIVATE_IP"; then
+        print_status "$RED" "❌ IP extracted from HA_AWS_S3_SERVICE_ENDPOINT '$PRIVATE_IP' is not a valid IP address"
         ((errors++))
     fi
     
@@ -141,15 +147,16 @@ validate_variables() {
     local expected_endpoint="http://${PRIVATE_IP}:${MINIO_API_PORT}"
     
     if [ "$HA_AWS_S3_SERVICE_ENDPOINT" != "$expected_endpoint" ]; then
-        print_status "$RED" "❌ HA_AWS_S3_SERVICE_ENDPOINT mismatch!"
+        print_status "$RED" "❌ HA_AWS_S3_SERVICE_ENDPOINT inconsistency!"
         print_status "$RED" "   Current: $HA_AWS_S3_SERVICE_ENDPOINT"
         print_status "$RED" "   Expected: $expected_endpoint"
+        print_status "$RED" "   (based on extracted IP: $PRIVATE_IP and MINIO_API_PORT: $MINIO_API_PORT)"
         ((errors++))
     fi
     
     # Validate bucket name (basic S3 bucket naming rules)
-    if [[ ! "$MINIO_BUCKET_NAME" =~ ^[a-z0-9.-]+$ ]] || [[ ${#MINIO_BUCKET_NAME} -lt 3 ]] || [[ ${#MINIO_BUCKET_NAME} -gt 63 ]]; then
-        print_status "$RED" "❌ MINIO_BUCKET_NAME '$MINIO_BUCKET_NAME' doesn't follow S3 naming conventions"
+    if [[ ! "$HA_AWS_S3_BUCKET" =~ ^[a-z0-9.-]+$ ]] || [[ ${#HA_AWS_S3_BUCKET} -lt 3 ]] || [[ ${#HA_AWS_S3_BUCKET} -gt 63 ]]; then
+        print_status "$RED" "❌ HA_AWS_S3_BUCKET '$HA_AWS_S3_BUCKET' doesn't follow S3 naming conventions"
         print_status "$RED" "   Must be 3-63 chars, lowercase, numbers, dots, and hyphens only"
         ((errors++))
     fi
@@ -178,14 +185,19 @@ fix_ha_endpoint() {
 
 # Function to show current configuration
 show_config() {
+    # Extract IP from endpoint for display
+    local extracted_ip=$(echo "$HA_AWS_S3_SERVICE_ENDPOINT" | sed -n 's|^http://\([^:]*\):.*|\1|p')
+    
     print_status "$BLUE" "📋 Current Configuration:"
-    echo "   PRIVATE_IP: $PRIVATE_IP"
+    echo "   HA_AWS_S3_SERVICE_ENDPOINT: $HA_AWS_S3_SERVICE_ENDPOINT"
+    echo "   Extracted Private IP: $extracted_ip"
     echo "   MINIO_API_PORT: $MINIO_API_PORT"
     echo "   MINIO_CONSOLE_PORT: ${MINIO_CONSOLE_PORT:-9001}"
-    echo "   MINIO_BUCKET_NAME: $MINIO_BUCKET_NAME"
-    echo "   HA_AWS_S3_SERVICE_ENDPOINT: $HA_AWS_S3_SERVICE_ENDPOINT"
-    echo "   MINIO_ROOT_USER: $MINIO_ROOT_USER"
-    echo "   MINIO_ROOT_PASSWORD: [${#MINIO_ROOT_PASSWORD} chars]"
+    echo "   HA_AWS_S3_BUCKET: $HA_AWS_S3_BUCKET"
+    echo "   HA_AWS_ACCESS_KEY: $HA_AWS_ACCESS_KEY"
+    echo "   HA_AWS_SECRET_KEY: [${#HA_AWS_SECRET_KEY} chars]"
+    echo "   HA_RECORDING_STORAGE: ${HA_RECORDING_STORAGE:-not set}"
+    echo "   CHUNK_TIME_SIZE: ${CHUNK_TIME_SIZE:-not set}"
 }
 
 # Main function

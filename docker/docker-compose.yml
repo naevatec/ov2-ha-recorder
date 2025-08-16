@@ -1,45 +1,96 @@
+version: '3.8'
+
 services:
+  # MinIO service for object storage during development/testing
   minio:
-    image: minio/minio
-    environment:
-      - MINIO_ROOT_USER=${HA_AWS_ACCESS_KEY:-naeva_minio}
-      - MINIO_ROOT_PASSWORD=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
+    image: minio/minio:latest
+    container_name: openvidu-minio
     ports:
-      - ${MINIO_API_PORT:-9000}:9000
-      - ${MINIO_ADMIN_PORT:-9001}:9001
+      - "${MINIO_API_PORT:-9000}:9000"      # MinIO API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"  # MinIO Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    command: server /data --console-address ":9001"
     volumes:
-      - ./data/minio/data:/data
-        # - ./owncert/certificate.cert:/root/.minio/certs/public.crt:ro
-        # - ./owncert/certificate.key:/root/.minio/certs/private.key:ro
+      - minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
-    command: server /data --console-address ":9001"
     networks:
-      - ov-ha-recorder
+      - openvidu-network
 
-  mc:
-    image: minio/mc
-    container_name: minio-mc
+  # MinIO Client for bucket creation and management
+  minio-setup:
+    image: minio/mc:latest
+    container_name: openvidu-minio-setup
     depends_on:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ROOT_USER: ${HA_AWS_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${HA_AWS_SECRET_KEY:-minioadmin123}
-      MINIO_BUCKET_NAME: ${HA_AWS_S3_BUCKET:-recordings}
-      MC_HOST_minio: http://${MINIO_ROOT_USER:-naeva_minio}:${MINIO_ROOT_PASSWORD:-N43v4t3c_M1n10}@minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-recordings}
     entrypoint: >
-        /bin/sh -c "
-        echo 'Setting up MinIO...';
-        echo 'Using credentials: $MINIO_ROOT_USER / [password hidden]';
-        echo 'Creating bucket: $MINIO_BUCKET_NAME';
-        /usr/bin/mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD;
-        /usr/bin/mc mb local/$MINIO_BUCKET_NAME --ignore-existing;
-        /usr/bin/mc policy set public local/$MINIO_BUCKET_NAME;
-        echo 'MinIO setup completed successfully';
-        "    
+      /bin/sh -c "
+      echo 'Setting up MinIO...';
+      echo 'Using credentials: $MINIO_ROOT_USER / [password hidden]';
+      echo 'Creating bucket: $MINIO_BUCKET_NAME';
+      /usr/bin/mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD;
+      /usr/bin/mc mb local/$MINIO_BUCKET_NAME --ignore-existing;
+      /usr/bin/mc policy set public local/$MINIO_BUCKET_NAME;
+      echo 'MinIO setup completed successfully';
+      "
     networks:
-      - ov-ha-recorder
+      - openvidu-network
+
+  # Your custom OpenVidu recording image
+  openvidu-recording:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - TAG=${TAG:-latest}
+    image: openvidu/openvidu-recording:${TAG:-latest}
+    container_name: openvidu-recording-${TAG:-latest}
+    depends_on:
+      - minio-setup
+    environment:
+      # MinIO connection settings (using your HA variable names)
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
+      - MINIO_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
+      - MINIO_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
+      # HA Recorder specific variables
+      - HA_AWS_S3_SERVICE_ENDPOINT=${HA_AWS_S3_SERVICE_ENDPOINT}
+      - HA_AWS_S3_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
+      - HA_AWS_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
+      - HA_AWS_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
+      - MINIO_API_PORT=${MINIO_API_PORT:-9000}
+      - HA_RECORDING_STORAGE=${HA_RECORDING_STORAGE:-local}
+      - CHUNK_FOLDER=${CHUNK_FOLDER:-/local-chunks}
+      - CHUNK_TIME_SIZE=${CHUNK_TIME_SIZE:-20}
+      # Recording settings
+      - RECORDING_PATH=/recordings
+    volumes:
+      - recordings_data:/recordings
+      # Mount your scripts and utils if they're in separate directories
+      - ./scripts:/scripts:ro
+      - ./utils:/utils:ro
+    networks:
+      - openvidu-network
+    # Uncomment the following lines if you want to run the container
+    # profiles:
+    #   - run-container
+
+volumes:
+  minio_data:
+    driver: local
+  recordings_data:
+    driver: local
+
+networks:
+  openvidu-network:
+    driver: bridge

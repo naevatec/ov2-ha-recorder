@@ -58,7 +58,7 @@ build_new_image() {
     fi
     
     # Build the image directly with docker build
-    docker build --rm --pull --no-cache  -t "${FULL_IMAGE_NAME}" .
+    docker build -t "${FULL_IMAGE_NAME}" .
     
     # Verify the new image has correct label
     NEW_MAINTAINER_CHECK=$(docker inspect "${FULL_IMAGE_NAME}" --format='{{index .Config.Labels "maintainer"}}' 2>/dev/null || echo "")

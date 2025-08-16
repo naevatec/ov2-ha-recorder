@@ -129,24 +129,24 @@ start_minio_services() {
     export TAG="$TAG"
     
     # Start MinIO and its setup
-    docker-compose up -d minio minio-setup
+    docker-compose up -d minio minio-mc
     
     # Wait for MinIO setup to complete
     echo "⏳ Waiting for MinIO setup to complete..."
     
-    # Wait for minio-setup container to finish (it should exit when done)
+    # Wait for minio-mc container to finish (it should exit when done)
     timeout=60
     elapsed=0
     while [ $elapsed -lt $timeout ]; do
-        if ! docker-compose ps minio-setup | grep -q "Up"; then
+        if ! docker-compose ps minio-mc | grep -q "Up"; then
             # Container has stopped, check if it completed successfully
-            exit_code=$(docker-compose ps -q minio-setup | xargs docker inspect --format='{{.State.ExitCode}}' 2>/dev/null || echo "1")
+            exit_code=$(docker-compose ps -q minio-mc | xargs docker inspect --format='{{.State.ExitCode}}' 2>/dev/null || echo "1")
             if [ "$exit_code" = "0" ]; then
                 echo "✅ MinIO setup completed successfully"
                 break
             else
                 echo "❌ MinIO setup failed with exit code: $exit_code"
-                docker-compose logs minio-setup
+                docker-compose logs minio-mc
                 exit 1
             fi
         fi
@@ -156,7 +156,7 @@ start_minio_services() {
     
     if [ $elapsed -ge $timeout ]; then
         echo "⚠️  MinIO setup timeout reached, checking logs..."
-        docker-compose logs minio-setup
+        docker-compose logs minio-mc
     fi
     
     echo "✅ MinIO services are ready"
