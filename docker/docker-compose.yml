@@ -1,0 +1,45 @@
+services:
+  minio:
+    image: minio/minio
+    environment:
+      - MINIO_ROOT_USER=${HA_AWS_ACCESS_KEY:-naeva_minio}
+      - MINIO_ROOT_PASSWORD=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
+    ports:
+      - ${MINIO_API_PORT:-9000}:9000
+      - ${MINIO_ADMIN_PORT:-9001}:9001
+    volumes:
+      - ./data/minio/data:/data
+        # - ./owncert/certificate.cert:/root/.minio/certs/public.crt:ro
+        # - ./owncert/certificate.key:/root/.minio/certs/private.key:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    command: server /data --console-address ":9001"
+    networks:
+      - ov-ha-recorder
+
+  mc:
+    image: minio/mc
+    container_name: minio-mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${HA_AWS_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${HA_AWS_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET_NAME: ${HA_AWS_S3_BUCKET:-recordings}
+      MC_HOST_minio: http://${MINIO_ROOT_USER:-naeva_minio}:${MINIO_ROOT_PASSWORD:-N43v4t3c_M1n10}@minio:9000
+    entrypoint: >
+        /bin/sh -c "
+        echo 'Setting up MinIO...';
+        echo 'Using credentials: $MINIO_ROOT_USER / [password hidden]';
+        echo 'Creating bucket: $MINIO_BUCKET_NAME';
+        /usr/bin/mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD;
+        /usr/bin/mc mb local/$MINIO_BUCKET_NAME --ignore-existing;
+        /usr/bin/mc policy set public local/$MINIO_BUCKET_NAME;
+        echo 'MinIO setup completed successfully';
+        "    
+    networks:
+      - ov-ha-recorder
