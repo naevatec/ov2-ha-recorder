@@ -65,7 +65,7 @@ TAG=2.31.0                           # OpenVidu image tag
 
 ### Service Architecture
 
-The project uses Docker Compose with the following services:
+The project uses Docker Compose v2 with the following services:
 
 | Service              | Container Name             | Purpose                         | Network          |
 | -------------------- | -------------------------- | ------------------------------- | ---------------- |
@@ -222,13 +222,13 @@ Start recorder manually for custom testing:
 ./manage-environment.sh start
 
 # Start recorder with test profile
-docker-compose --profile test up -d openvidu-recording
+docker compose --profile test up -d openvidu-recording
 
 # Check logs
-docker-compose logs openvidu-recording
+docker compose logs openvidu-recording
 
 # Stop recorder
-docker-compose --profile test down
+docker compose --profile test down
 ```
 
 ## 🔧 Troubleshooting
@@ -255,7 +255,7 @@ docker-compose --profile test down
 **Issue**: MinIO setup fails
 ```bash
 # Check setup logs
-docker-compose logs minio-mc
+docker compose logs minio-mc
 
 # Restart MinIO services
 ./manage-environment.sh stop
@@ -271,7 +271,7 @@ docker images openvidu/openvidu-recording:2.31.0
 ./replace-openvidu-image.sh 2.31.0
 
 # Check recorder logs
-docker-compose logs openvidu-recording
+docker compose logs openvidu-recording
 ```
 
 #### Permission Issues
@@ -295,15 +295,15 @@ chmod 755 ./data/minio/data ./data/recorder/data
 
 ```bash
 # All services
-docker-compose logs
+docker compose logs
 
 # Specific service
-docker-compose logs minio
-docker-compose logs minio-mc
-docker-compose logs openvidu-recording
+docker compose logs minio
+docker compose logs minio-mc
+docker compose logs openvidu-recording
 
 # Follow logs in real-time
-docker-compose logs -f openvidu-recording
+docker compose logs -f openvidu-recording
 ```
 
 ## 🏗️ Image Building Details
@@ -400,7 +400,7 @@ For rapid iteration during development:
 ./manage-environment.sh test
 
 # Start recorder for manual testing
-docker-compose --profile test up -d openvidu-recording
+docker compose --profile test up -d openvidu-recording
 ```
 
 ## 🤝 Contributing

@@ -12,23 +12,25 @@ cd "$SCRIPT_DIR"
 TAG="${2:-2.31.0}"
 
 show_usage() {
-    echo "Usage: $0 [start|stop|status|logs|clean|test] [TAG]"
+    echo "Usage: $0 [start|stop|status|logs|clean|test|test-recorder] [TAG]"
     echo ""
     echo "Development helper commands:"
-    echo "  start   - Start only MinIO services (no image building)"
-    echo "  stop    - Stop all services"
-    echo "  status  - Show status of services and images"
-    echo "  logs    - Show logs from MinIO services"
-    echo "  clean   - Stop services and remove volumes/images"
-    echo "  test    - Test the OpenVidu recording container"
+    echo "  start        - Start only MinIO services (no image building)"
+    echo "  stop         - Stop all services"
+    echo "  status       - Show status of services and images"
+    echo "  logs         - Show logs from MinIO services"
+    echo "  clean        - Stop services and remove volumes/images"
+    echo "  test         - Test the OpenVidu recording container"
+    echo "  test-recorder - Full S3 recording test (20 seconds)"
     echo ""
     echo "TAG: Docker image tag to use (default: 2.31.0)"
     echo ""
     echo "Examples:"
-    echo "  $0 start           # Start MinIO with default tag"
-    echo "  $0 status          # Check what's running"
-    echo "  $0 test 2.31.0     # Test container functionality"
-    echo "  $0 clean           # Clean everything"
+    echo "  $0 start             # Start MinIO with default tag"
+    echo "  $0 status            # Check what's running"
+    echo "  $0 test 2.31.0       # Test container functionality"
+    echo "  $0 test-recorder     # Full recording test with S3"
+    echo "  $0 clean             # Clean everything"
     echo ""
     echo "Note: For full deployment workflow, use replace-openvidu-image.sh"
 }
@@ -89,7 +91,7 @@ start_environment() {
 
 stop_environment() {
     echo "🛑 Stopping all services..."
-    docker-compose down
+    docker compose down
     echo "✅ All services stopped"
 }
 
@@ -97,8 +99,8 @@ show_status() {
     echo "📊 Environment Status:"
     echo ""
     echo "🐳 Docker Compose Services:"
-    if docker-compose ps 2>/dev/null | grep -q "openvidu"; then
-        docker-compose ps
+    if docker compose ps 2>/dev/null | grep -q "openvidu\|minio"; then
+        docker compose ps
     else
         echo "   No services running"
     fi
@@ -143,7 +145,7 @@ clean_environment() {
     echo "🧹 Cleaning development environment..."
     
     # Stop and remove containers, networks, and volumes
-    docker-compose down -v --remove-orphans
+    docker compose down -v --remove-orphans
     
     # Remove OpenVidu recording images for the specified tag
     IMAGE_NAME="openvidu/openvidu-recording:$TAG"
@@ -174,11 +176,11 @@ test_container() {
         exit 1
     fi
     
-    # Export TAG for docker-compose
+    # Export TAG for docker compose
     export TAG="$TAG"
     
     echo "🔍 Testing container basic functionality..."
-    docker-compose run --rm openvidu-recording /bin/bash -c "
+    docker compose run --rm openvidu-recording /bin/bash -c "
         echo '=== Testing System Components ===';
         echo 'Chrome version:';
         google-chrome --version 2>/dev/null || echo 'Chrome not found';
@@ -208,6 +210,69 @@ test_container() {
     fi
 }
 
+test_recorder() {
+    echo "🎥 Full S3 Recording Test (TAG: $TAG)"
+    echo "This will test a complete 20-second recording workflow with S3 storage"
+    echo ""
+    
+    # Validate environment first
+    validate_environment
+    
+    IMAGE_NAME="openvidu/openvidu-recording:$TAG"
+    
+    # Check if image exists
+    if ! docker images "$IMAGE_NAME" --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
+        echo "❌ Image $IMAGE_NAME not found"
+        echo "💡 Build it first with: ./replace-openvidu-image.sh $TAG"
+        exit 1
+    fi
+    
+    # Ensure MinIO is running
+    if ! docker compose ps minio | grep -q "Up"; then
+        echo "🚀 Starting MinIO services first..."
+        start_environment
+    fi
+    
+    # Export environment for docker compose
+    export TAG="$TAG"
+    export HA_RECORDING_STORAGE="s3"
+    
+    echo "🎬 Starting recording test with S3 storage..."
+    echo "📁 Creating local directories..."
+    mkdir -p ./data/recorder/data
+    
+    # Start recorder with test profile
+    docker compose --profile test up -d openvidu-recording
+    
+    # Wait for container to be ready
+    echo "⏳ Waiting for recorder to initialize..."
+    sleep 5
+    
+    # Check if container is running
+    if ! docker compose ps openvidu-recording | grep -q "Up"; then
+        echo "❌ Recorder failed to start"
+        docker compose logs openvidu-recording
+        exit 1
+    fi
+    
+    echo "✅ Recorder container is running"
+    echo "🔍 Container logs (last 10 lines):"
+    docker compose logs --tail=10 openvidu-recording
+    
+    echo ""
+    echo "📊 Test Summary:"
+    echo "   - MinIO is accessible at: http://localhost:${MINIO_CONSOLE_PORT:-9001}"
+    echo "   - Bucket: ${HA_AWS_S3_BUCKET:-ov-recordings}"
+    echo "   - Local recordings: ./data/recorder/data"
+    echo "   - S3 Storage mode: ENABLED"
+    echo ""
+    echo "💡 Check MinIO console to verify S3 connectivity works"
+    echo "💡 Use 'docker compose logs openvidu-recording' for detailed logs"
+    echo ""
+    echo "🛑 To stop the test:"
+    echo "   docker compose --profile test down"
+}
+
 # Main execution
 case "${1:-}" in
     start)
@@ -227,6 +292,9 @@ case "${1:-}" in
         ;;
     test)
         test_container
+        ;;
+    test-recorder)
+        test_recorder
         ;;
     *)
         show_usage

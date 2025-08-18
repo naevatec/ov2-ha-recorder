@@ -130,4 +130,6 @@ dist
 .pnp.*
 
 # internal use
-.internal
+# Ignore anything containing 'internal' in its name (file or directory, anywhere)
+*internal*
+

@@ -85,13 +85,13 @@ replace_openvidu_image() {
         
         # Function to build new image using docker-compose
         build_new_image_with_compose() {
-            echo "🔨 Building new image with docker-compose: ${FULL_IMAGE_NAME}"
+            echo "🔨 Building new image with docker compose: ${FULL_IMAGE_NAME}"
             
-            # Export TAG for docker-compose
+            # Export TAG for docker compose
             export TAG="$TAG"
             
-            # Build using docker-compose
-            docker-compose build openvidu-recording
+            # Build using docker compose
+            docker compose build openvidu-recording
             
             # Verify the new image has correct label
             NEW_MAINTAINER_CHECK=$(docker inspect "${FULL_IMAGE_NAME}" --format='{{index .Config.Labels "maintainer"}}' 2>/dev/null || echo "")
@@ -115,9 +115,9 @@ replace_openvidu_image() {
     fi
 }
 
-# Function to start MinIO services via docker-compose
+# Function to start MinIO services via docker compose
 start_minio_services() {
-    echo "🚀 Starting MinIO services via docker-compose..."
+    echo "🚀 Starting MinIO services via docker compose..."
     
     # Check if docker-compose.yml exists
     if [ ! -f "${SCRIPT_DIR}/docker-compose.yml" ]; then
@@ -125,11 +125,11 @@ start_minio_services() {
         exit 1
     fi
     
-    # Export TAG for docker-compose
+    # Export TAG for docker compose
     export TAG="$TAG"
     
     # Start MinIO and its setup
-    docker-compose up -d minio minio-mc
+    docker compose up -d minio minio-mc
     
     # Wait for MinIO setup to complete
     echo "⏳ Waiting for MinIO setup to complete..."
@@ -138,15 +138,15 @@ start_minio_services() {
     timeout=60
     elapsed=0
     while [ $elapsed -lt $timeout ]; do
-        if ! docker-compose ps minio-mc | grep -q "Up"; then
+        if ! docker compose ps minio-mc | grep -q "Up"; then
             # Container has stopped, check if it completed successfully
-            exit_code=$(docker-compose ps -q minio-mc | xargs docker inspect --format='{{.State.ExitCode}}' 2>/dev/null || echo "1")
+            exit_code=$(docker compose ps -q minio-mc | xargs docker inspect --format='{{.State.ExitCode}}' 2>/dev/null || echo "1")
             if [ "$exit_code" = "0" ]; then
                 echo "✅ MinIO setup completed successfully"
                 break
             else
                 echo "❌ MinIO setup failed with exit code: $exit_code"
-                docker-compose logs minio-mc
+                docker compose logs minio-mc
                 exit 1
             fi
         fi
@@ -156,7 +156,7 @@ start_minio_services() {
     
     if [ $elapsed -ge $timeout ]; then
         echo "⚠️  MinIO setup timeout reached, checking logs..."
-        docker-compose logs minio-mc
+        docker compose logs minio-mc
     fi
     
     echo "✅ MinIO services are ready"
@@ -169,7 +169,7 @@ show_final_status() {
     echo "📊 Final status:"
     echo ""
     echo "🐳 Docker Compose Services:"
-    docker-compose ps
+    docker compose ps
     echo ""
     echo "📦 OpenVidu Recording Image:"
     docker images "openvidu/openvidu-recording:${TAG}" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"
@@ -197,7 +197,7 @@ main() {
     
     echo ""
     echo "🎉 Process completed successfully!"
-    echo "💡 MinIO service is running. Use 'docker-compose down' to stop when done."
+    echo "💡 MinIO service is running. Use 'docker compose down' to stop when done."
     echo "🔍 Image ready: openvidu/openvidu-recording:${TAG}"
 }
 
@@ -207,4 +207,4 @@ main
 echo ""
 echo "🔍 Additional verification commands:"
 echo "   docker inspect openvidu/openvidu-recording:${TAG} --format='{{json .Config.Labels}}' | jq"
-echo "   docker-compose logs minio"
+echo "   docker compose logs minio"
