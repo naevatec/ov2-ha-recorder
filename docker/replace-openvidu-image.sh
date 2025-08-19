@@ -66,16 +66,16 @@ replace_openvidu_image() {
                 MAINTAINER=$(docker inspect "${FULL_IMAGE_NAME}" --format='{{index .Config.Labels "maintainer"}}' 2>/dev/null || echo "")
                 
                 if [ "$MAINTAINER" = "$OLD_MAINTAINER" ]; then
-                    echo "🗑️  Found image with old maintainer label: $MAINTAINER"
-                    echo "🗑️  Removing old image..."
+                    echo "🗑️ Found image with old maintainer label: $MAINTAINER"
+                    echo "🗑️ Removing old image..."
                     docker rmi "${FULL_IMAGE_NAME}"
                     echo "✅ Old image removed successfully"
                 elif [ "$MAINTAINER" = "$NEW_MAINTAINER" ]; then
-                    echo "ℹ️  Image already has the new maintainer label: $MAINTAINER"
-                    echo "ℹ️  Skipping removal, but will rebuild to ensure latest version"
+                    echo "ℹ️ Image already has the new maintainer label: $MAINTAINER"
+                    echo "ℹ️ Skipping removal, but will rebuild to ensure latest version"
                 else
-                    echo "⚠️  Image has different maintainer label: $MAINTAINER"
-                    echo "⚠️  Removing anyway to ensure clean replacement..."
+                    echo "⚠️ Image has different maintainer label: $MAINTAINER"
+                    echo "⚠️ Removing anyway to ensure clean replacement..."
                     docker rmi "${FULL_IMAGE_NAME}"
                 fi
             else
@@ -128,35 +128,87 @@ start_minio_services() {
     # Export TAG for docker compose
     export TAG="$TAG"
     
-    # Start MinIO and its setup
-    docker compose up -d minio minio-mc
+    # Start MinIO services with single docker compose command
+    echo "📦 Starting MinIO and setup containers..."
+    docker compose up -d
     
     # Wait for MinIO setup to complete
     echo "⏳ Waiting for MinIO setup to complete..."
     
-    # Wait for minio-mc container to finish (it should exit when done)
-    timeout=60
+    # Wait for minio-mc container to finish its setup job
+    timeout=120  # Increased timeout for setup
     elapsed=0
+    setup_completed=false
+    
     while [ $elapsed -lt $timeout ]; do
-        if ! docker compose ps minio-mc | grep -q "Up"; then
-            # Container has stopped, check if it completed successfully
-            exit_code=$(docker compose ps -q minio-mc | xargs docker inspect --format='{{.State.ExitCode}}' 2>/dev/null || echo "1")
-            if [ "$exit_code" = "0" ]; then
-                echo "✅ MinIO setup completed successfully"
-                break
-            else
-                echo "❌ MinIO setup failed with exit code: $exit_code"
-                docker compose logs minio-mc
-                exit 1
-            fi
+        # Check if minio-mc container exists and get its status
+        if mc_status=$(docker compose ps -a minio-mc --format "{{.State}}" 2>/dev/null); then
+            case "$mc_status" in
+                "running")
+                    echo "⏳ MinIO setup still running... (${elapsed}s elapsed)"
+                    ;;
+                "exited")
+                    # Container has exited, check exit code
+                    exit_code=$(docker compose ps -a minio-mc --format "{{.ExitCode}}" 2>/dev/null || echo "1")
+                    if [ "$exit_code" = "0" ]; then
+                        echo "✅ MinIO setup completed successfully"
+                        setup_completed=true
+                        break
+                    else
+                        echo "❌ MinIO setup failed with exit code: $exit_code"
+                        echo "📋 MinIO setup logs:"
+                        docker compose logs minio-mc
+                        exit 1
+                    fi
+                    ;;
+                *)
+                    echo "⚠️ MinIO setup container in unexpected state: $mc_status"
+                    ;;
+            esac
+        else
+            echo "⚠️ Cannot get minio-mc container status"
         fi
-        sleep 2
-        elapsed=$((elapsed + 2))
+        
+        sleep 3
+        elapsed=$((elapsed + 3))
     done
     
-    if [ $elapsed -ge $timeout ]; then
-        echo "⚠️  MinIO setup timeout reached, checking logs..."
+    if [ "$setup_completed" = false ]; then
+        echo "⚠️ MinIO setup timeout reached (${timeout}s), checking final status..."
+        echo "📋 MinIO setup logs:"
         docker compose logs minio-mc
+        
+        # Check if setup actually completed despite timeout
+        final_exit_code=$(docker compose ps -a minio-mc --format "{{.ExitCode}}" 2>/dev/null || echo "1")
+        if [ "$final_exit_code" = "0" ]; then
+            echo "✅ MinIO setup completed successfully (detected after timeout)"
+        else
+            echo "❌ MinIO setup failed or timed out"
+            exit 1
+        fi
+    fi
+    
+    # Verify MinIO is healthy
+    echo "🏥 Checking MinIO health..."
+    minio_health_timeout=30
+    minio_elapsed=0
+    
+    while [ $minio_elapsed -lt $minio_health_timeout ]; do
+        if docker compose ps minio --format "{{.State}}" | grep -q "running"; then
+            # Check if MinIO is responding
+            if docker compose exec -T minio curl -f http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+                echo "✅ MinIO is healthy and responding"
+                break
+            fi
+        fi
+        
+        echo "⏳ Waiting for MinIO to be healthy... (${minio_elapsed}s elapsed)"
+        sleep 3
+        minio_elapsed=$((minio_elapsed + 3))
+    done
+    
+    if [ $minio_elapsed -ge $minio_health_timeout ]; then
+        echo "⚠️ MinIO health check timeout, but continuing..."
     fi
     
     echo "✅ MinIO services are ready"
@@ -174,7 +226,7 @@ show_final_status() {
     echo "📦 OpenVidu Recording Image:"
     docker images "openvidu/openvidu-recording:${TAG}" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"
     echo ""
-    echo "🏷️  Image labels:"
+    echo "🏷️ Image labels:"
     docker inspect "openvidu/openvidu-recording:${TAG}" --format='{{range $key, $value := .Config.Labels}}{{$key}}: {{$value}}{{"\n"}}{{end}}' | sort
 }
 
@@ -198,13 +250,13 @@ main() {
     echo ""
     echo "🎉 Process completed successfully!"
     echo "💡 MinIO service is running. Use 'docker compose down' to stop when done."
-    echo "🔍 Image ready: openvidu/openvidu-recording:${TAG}"
+    echo "📝 Image ready: openvidu/openvidu-recording:${TAG}"
 }
 
 # Execute main function
 main
 
 echo ""
-echo "🔍 Additional verification commands:"
+echo "📋 Additional verification commands:"
 echo "   docker inspect openvidu/openvidu-recording:${TAG} --format='{{json .Config.Labels}}' | jq"
 echo "   docker compose logs minio"

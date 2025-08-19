@@ -2,7 +2,6 @@ FROM ubuntu:24.04
 
 LABEL maintainer="NaevaTec-OpenVidu eiglesia@openvidu.io"
 
-
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Base packages (no recommends to avoid extra Python deps like python3-cryptography)
@@ -20,6 +19,10 @@ RUN set -eux; \
   pulseaudio \
   xvfb \
   jq \
+  # Additional packages for chunk uploading
+  inotify-tools \
+  unzip \
+  curl \
   # Language Fonts
   ttf-ancient-fonts fonts-beng fonts-wqy-zenhei fonts-indic \
   ; \
@@ -29,6 +32,12 @@ RUN set -eux; \
   apt-mark hold python3-cryptography || true; \
   fi; \
   rm -rf /var/lib/apt/lists/*
+
+# Install AWS CLI v2 for S3 uploads (compatible with MinIO and other S3-compatible services)
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+  && unzip awscliv2.zip \
+  && ./aws/install \
+  && rm -rf awscliv2.zip aws
 
 # Install latest stable Chrome (signed repo, no apt-key)
 RUN set -eux; \
@@ -54,14 +63,27 @@ RUN adduser root pulse-access
 # Clean
 RUN apt-get clean && apt-get autoclean && apt-get autoremove -y
 
-# Copy scripts
-COPY entrypoint.sh scripts/composed.sh  ./
-COPY utils/xvfb-run-safe /usr/local/bin
+# Create log directory for chunk uploader and other services
+RUN mkdir -p /var/log && chmod 755 /var/log
+
+# Copy scripts and utilities
+COPY entrypoint.sh scripts/composed.sh ./
+COPY utils/xvfb-run-safe /usr/local/bin/
 COPY utils/headless-chrome.sh ./
+COPY utils/chunk-uploader.sh /usr/local/bin/
+COPY utils/chunk-downloader.sh /usr/local/bin/
+COPY utils/chunk-cleaner.sh /usr/local/bin/
+COPY utils/log-uploader.sh /usr/local/bin/
+COPY utils/logging.sh /usr/local/bin/
 
 # Prepare scripts and folders
 RUN chmod +x /entrypoint.sh /composed.sh /headless-chrome.sh \
   && chmod +x /usr/local/bin/xvfb-run-safe \
+  && chmod +x /usr/local/bin/chunk-uploader.sh \
+  && chmod +x /usr/local/bin/chunk-downloader.sh \
+  && chmod +x /usr/local/bin/chunk-cleaner.sh \
+  && chmod +x /usr/local/bin/log-uploader.sh \
+  && chmod +x /usr/local/bin/logging.sh \
   && mkdir -p /recordings \
   && chmod 777 /recordings
 
