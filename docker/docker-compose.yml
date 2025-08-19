@@ -36,27 +36,75 @@ services:
     entrypoint: >
       /bin/sh -c "
       echo 'Setting up MinIO...';
-      echo 'Using credentials: $$MINIO_ROOT_USER / [password hidden]';
-      echo 'Creating bucket: $$MINIO_BUCKET_NAME';
-      /usr/bin/mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
-      /usr/bin/mc mb local/$$MINIO_BUCKET_NAME --ignore-existing;
-      /usr/bin/mc policy set public local/$$MINIO_BUCKET_NAME;
+      echo 'Using credentials: $MINIO_ROOT_USER / [password hidden]';
+      echo 'Creating bucket: $MINIO_BUCKET_NAME';
+      /usr/bin/mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD;
+      /usr/bin/mc mb local/$MINIO_BUCKET_NAME --ignore-existing;
+      /usr/bin/mc policy set public local/$MINIO_BUCKET_NAME;
       echo 'MinIO setup completed successfully';
       "
     networks:
       - ov-ha-recorder
 
+  # Redis service for OV Recorder HA Controller
+  redis:
+    image: redis:7-alpine
+    container_name: ov-recorder-redis
+    # No external port exposure - internal only
+    volumes:
+      - ./data/redis/data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    networks:
+      - ov-ha-recorder
+
+  # OV Recorder HA Controller service
+  ov-recorder-ha-controller:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: ov-recorder-ha-controller
+    ports:
+      - "${HA_RECORDER_PORT:-8080}:8080"
+    environment:
+      # Redis connection
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      # Security
+      - APP_SECURITY_USERNAME=${HA_RECORDER_USERNAME:-recorder}
+      - APP_SECURITY_PASSWORD=${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}
+      # Session management
+      - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30s}
+      - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-600s}
+      # MinIO integration (for future use)
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
+      - MINIO_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
+      - MINIO_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
+    depends_on:
+      - redis
+      - minio-mc
+    restart: unless-stopped
+    networks:
+      - ov-ha-recorder
+    volumes:
+      - ./data/controller/logs:/app/logs
+    profiles:
+      - ha-controller
+      - test
+
   # Your custom OpenVidu recording image
   openvidu-recording:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: recorder/Dockerfile
       args:
         - TAG=${TAG:-latest}
     image: openvidu/openvidu-recording:${TAG:-latest}
     container_name: openvidu-recording-${TAG:-latest}
     depends_on:
       - minio-mc
+      - ov-recorder-ha-controller
     environment:
       # MinIO connection settings (using your HA variable names)
       - MINIO_ENDPOINT=http://minio:9000
@@ -72,13 +120,17 @@ services:
       - HA_RECORDING_STORAGE=${HA_RECORDING_STORAGE:-local}
       - CHUNK_FOLDER=${CHUNK_FOLDER:-/local-chunks}
       - CHUNK_TIME_SIZE=${CHUNK_TIME_SIZE:-20}
+      # HA Controller connection
+      - HA_CONTROLLER_URL=http://ov-recorder-ha-controller:8080
+      - HA_CONTROLLER_USERNAME=${HA_RECORDER_USERNAME:-recorder}
+      - HA_CONTROLLER_PASSWORD=${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}
       # Recording settings
       - RECORDING_PATH=/recordings
     volumes:
       - ./data/recorder/data:/recordings
-      # Mount your scripts and utils if they're in separate directories
-      - ./scripts:/scripts:ro
-      - ./utils:/utils:ro
+      # Mount scripts and utils from recorder directory
+      - ./recorder/scripts:/scripts:ro
+      - ./recorder/utils:/utils:ro
     networks:
       - ov-ha-recorder
     # Use profiles to control when recorder starts
@@ -92,6 +144,7 @@ volumes:
     driver: local
   recordings_data:
     driver: local
+  # Redis data is now using local bind mount: ./data/redis/data
 
 networks:
   ov-ha-recorder:

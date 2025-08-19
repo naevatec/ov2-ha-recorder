@@ -132,4 +132,5 @@ dist
 # internal use
 # Ignore anything containing 'internal' in its name (file or directory, anywhere)
 *internal*
-
+.project_name
+.envrc

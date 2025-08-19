@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Launch OV Recorder",
+      "request": "launch",
+      "mainClass": "com.naevatec.ovrecorder.OvRecorderApplication",
+      "projectName": "ov-recorder",
+      "args": "",
+      "vmArgs": "",
+      "env": {
+        "SPRING_PROFILES_ACTIVE": "dev"
+      },
+      "console": "internalConsole",
+      "stopOnEntry": false,
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "type": "java",
+      "name": "Debug OV Recorder",
+      "request": "launch",
+      "mainClass": "com.naevatec.ovrecorder.OvRecorderApplication",
+      "projectName": "ov-recorder",
+      "args": "",
+      "vmArgs": "-Dspring.profiles.active=dev -Dlogging.level.com.naevatec.ovrecorder=DEBUG",
+      "env": {},
+      "console": "internalConsole",
+      "stopOnEntry": false,
+      "internalConsoleOptions": "openOnSessionStart"
+    }
+  ]
+}
