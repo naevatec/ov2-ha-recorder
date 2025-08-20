@@ -36,11 +36,11 @@ services:
     entrypoint: >
       /bin/sh -c "
       echo 'Setting up MinIO...';
-      echo 'Using credentials: $MINIO_ROOT_USER / [password hidden]';
-      echo 'Creating bucket: $MINIO_BUCKET_NAME';
-      /usr/bin/mc alias set local http://minio:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD;
-      /usr/bin/mc mb local/$MINIO_BUCKET_NAME --ignore-existing;
-      /usr/bin/mc policy set public local/$MINIO_BUCKET_NAME;
+      echo 'Using credentials: $HA_AWS_ACCESS_KEY / [password hidden]';
+      echo 'Creating bucket: $HA_AWS_S3_BUCKET';
+      /usr/bin/mc alias set local http://minio:9000 $HA_AWS_ACCESS_KEY $HA_AWS_SECRET_KEY;
+      /usr/bin/mc mb local/$HA_AWS_S3_BUCKET --ignore-existing;
+      /usr/bin/mc policy set public local/$HA_AWS_S3_BUCKET;
       echo 'MinIO setup completed successfully';
       "
     networks:
@@ -51,6 +51,9 @@ services:
     image: redis:7-alpine
     container_name: ov-recorder-redis
     # No external port exposure - internal only
+    # For testing
+    ports:
+      - 15336:6379
     volumes:
       - ./data/redis/data:/data
     restart: unless-stopped

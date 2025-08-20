@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -28,11 +29,20 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
-        .csrf(csrf -> csrf.disable()) // Disable CSRF for API usage
+        .csrf(AbstractHttpConfigurer::disable) // Disable CSRF for API usage
         .authorizeHttpRequests(authz -> authz
-            .requestMatchers("/actuator/health").permitAll() // Allow health checks without auth
-            .requestMatchers("/api/sessions/health").permitAll() // Allow session health checks
-            .anyRequest().authenticated() // All other requests require authentication
+            // Health check endpoints (no auth required)
+            .requestMatchers("/actuator/health").permitAll()
+            .requestMatchers("/api/sessions/health").permitAll()
+
+            // Swagger/OpenAPI endpoints (no auth required for documentation)
+            .requestMatchers("/swagger-ui/**").permitAll()
+            .requestMatchers("/swagger-ui.html").permitAll()
+            .requestMatchers("/api-docs/**").permitAll()
+            .requestMatchers("/v3/api-docs/**").permitAll()
+
+            // All other requests require authentication
+            .anyRequest().authenticated()
         )
         .httpBasic(withDefaults()); // Enable HTTP Basic Authentication
 

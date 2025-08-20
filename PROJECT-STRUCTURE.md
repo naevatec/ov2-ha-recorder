@@ -30,8 +30,12 @@ BaseFolder/
 ├── docker/                                      # Docker deployment directory
 │   ├── docker-compose.yml                      # Docker Compose configuration
 │   ├── start.sh                                # Startup script
-│   └── server/                                 # Docker build context for app
+│   ├── server/                                 # Docker build context for app
+│   │   └── Dockerfile                          # Container build instructions
+│   └── recorder/                               # Docker build context for the ov substitute recorder
 │       └── Dockerfile                          # Container build instructions
+│       └── scripts/                            # Scripts used by the recorder app
+│       └── utils/                              # Other utility scripts used by the recorder app
 ├── pom.xml                                     # Maven configuration
 ├── README.md                                   # Project documentation
 └── example-scripts.sh                         # Shell script examples
@@ -54,8 +58,9 @@ Place all Java source files in the `src/main/java/com/naevatec/ovrecorder/` hier
 
 ### 3. **Docker Setup** (`docker/` directory)
 - **Compose File**: `docker/docker-compose.yml`
-- **Start Script**: `docker/start.sh`
+- **Start Script**: `docker/manage-environment.sh`
 - **Server Dockerfile**: `docker/server/Dockerfile`
+- **Recorder Dockerfile**: `docker/recorder/Dockerfile`
 
 ### 4. **Project Root**
 - **Maven Config**: `pom.xml`
@@ -73,7 +78,7 @@ mvn clean package -DskipTests
 ### Step 2: Copy JAR to Docker Context
 ```bash
 # Copy built JAR to docker build context
-cp target/ov-recorder-1.0.0.jar docker/server/
+cp target/recorder-ha-controller-1.0.0.jar docker/server/
 ```
 
 ### Step 3: Start with Docker
@@ -118,16 +123,16 @@ cd docker/
 cd docker/
 
 # Build and start
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f ov-recorder
+docker compose logs -f ov-recorder
 
 # Stop
-docker-compose down
+docker compose down
 
 # Restart
-docker-compose restart
+docker compose restart
 ```
 
 ### Direct API Testing
@@ -158,8 +163,8 @@ curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions
 
 1. **Code Changes**: Edit files in `src/` directory
 2. **Build**: Run `mvn clean package` from project root
-3. **Deploy**: Copy JAR to `docker/server/` and run `docker-compose up -d`
+3. **Deploy**: Copy JAR to `docker/server/` and run `docker compose up -d`
 4. **Test**: Use provided shell scripts or curl commands
-5. **Debug**: Check logs with `docker-compose logs -f ov-recorder`
+5. **Debug**: Check logs with `docker compose logs -f ov-recorder`
 
 This structure provides a clean separation between source code and deployment configuration, making it easy to manage both development and production environments.
