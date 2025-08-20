@@ -61,8 +61,10 @@ services:
   # OV Recorder HA Controller service
   ov-recorder-ha-controller:
     build:
-      context: .
-      dockerfile: server/Dockerfile
+      context: server
+      dockerfile: Dockerfile
+      additional_contexts:
+        sources: "../"
     container_name: ov-recorder-ha-controller
     ports:
       - "${HA_RECORDER_PORT:-8080}:8080"
@@ -76,14 +78,14 @@ services:
       # Session management
       - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30s}
       - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-600s}
-      # MinIO integration (for future use)
+      # MinIO integration (for future use - but no dependency needed)
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
       - MINIO_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
       - MINIO_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
     depends_on:
       - redis
-      - minio-mc
+      # Removed minio-mc dependency - HA Controller doesn't need MinIO to be ready
     restart: unless-stopped
     networks:
       - ov-ha-recorder
@@ -96,8 +98,8 @@ services:
   # Your custom OpenVidu recording image
   openvidu-recording:
     build:
-      context: .
-      dockerfile: recorder/Dockerfile
+      context: ./recorder
+      dockerfile: Dockerfile
       args:
         - TAG=${TAG:-latest}
     image: openvidu/openvidu-recording:${TAG:-latest}
@@ -128,7 +130,7 @@ services:
       - RECORDING_PATH=/recordings
     volumes:
       - ./data/recorder/data:/recordings
-      # Mount scripts and utils from recorder directory
+      # Mount scripts and utils from recorder directory (within docker folder)
       - ./recorder/scripts:/scripts:ro
       - ./recorder/utils:/utils:ro
     networks:

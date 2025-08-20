@@ -23,7 +23,7 @@
       "mainClass": "com.naevatec.ovrecorder.OvRecorderApplication",
       "projectName": "ov-recorder",
       "args": "",
-      "vmArgs": "-Dspring.profiles.active=dev -Dlogging.level.com.naevatec.ovrecorder=DEBUG",
+      "vmArgs": "-Dspring.profiles.active=dev -Dlogging.level.com.naevatec.ovrecorder=DEBUG -D spring.data.redis.host=devel.naevatec.com -Dspring.data.redis.port=15336",
       "env": {},
       "console": "internalConsole",
       "stopOnEntry": false,

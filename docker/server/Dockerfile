@@ -1,25 +1,24 @@
 # Multi-stage build for OV Recorder HA Controller
-FROM maven:3.9.4-openjdk-17-slim AS build
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 
 # Set working directory
 WORKDIR /app
 
 # Copy Maven files first (for better layer caching)
-COPY pom.xml .
-COPY .mvn .mvn
-COPY mvnw .
+# Files are in the build context root (BaseFolder)
+COPY --from=sources pom.xml .
 
 # Download dependencies (this layer will be cached if pom.xml doesn't change)
-RUN ./mvnw dependency:go-offline -B
+RUN mvn dependency:go-offline -B
 
-# Copy source code
-COPY src src
+# Copy source code from the build context root
+COPY --from=sources src/ src/
 
 # Build the application
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 # Runtime stage
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:21-jre
 
 # Install curl for health checks and other utilities
 RUN apt-get update && \
@@ -30,7 +29,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy the built jar from build stage
-COPY --from=build /app/target/ov-recorder-1.0.0.jar app.jar
+COPY --from=build /app/target/recorder-ha-controller-1.0.0.jar app.jar
 
 # Create logs directory
 RUN mkdir -p logs
