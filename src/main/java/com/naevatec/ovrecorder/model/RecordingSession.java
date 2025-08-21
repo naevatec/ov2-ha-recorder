@@ -59,6 +59,12 @@ public class RecordingSession {
   @Builder.Default
   private Boolean active = true;
 
+  @JsonProperty("backupContainerId")
+  private String backupContainerId;
+
+  @JsonProperty("backupContainerName")
+  private String backupContainerName;
+
   // Custom constructor for backward compatibility
   public RecordingSession(String sessionId, String clientId, String clientHost) {
     this.sessionId = sessionId;

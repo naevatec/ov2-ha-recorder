@@ -75,12 +75,33 @@ services:
       # Redis connection
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_DATABASE=0
       # Security
       - APP_SECURITY_USERNAME=${HA_RECORDER_USERNAME:-recorder}
       - APP_SECURITY_PASSWORD=${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}
       # Session management
       - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30000}
       - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-600}
+
+      # Failover Configuration
+      - APP_FAILOVER_ENABLED=true
+      - APP_FAILOVER_HEARTBEAT_TIMEOUT=300
+      - APP_FAILOVER_STUCK_CHUNK_TIMEOUT=180
+      - APP_FAILOVER_CHECK_INTERVAL=60000
+
+      # Docker Configuration for Failover
+      - APP_DOCKER_OPENVIDU_IMAGE=openvidu/openvidu-record
+      - APP_DOCKER_IMAGE_TAG=${OPENVIDU_VERSION:-2.31.0}
+      - APP_DOCKER_NETWORK=recorder-ha-controller_default
+      - APP_DOCKER_SOCKET_PATH=/var/run/docker.sock
+      - APP_FAILOVER_BACKUP_CONTAINER_PREFIX=backup-recorder
+
+      # Recording Environment Variables (passed to backup containers)
+      - RECORDING_BASE_URL=${RECORDING_BASE_URL:-https://devel.naevatec.com:4443/openvidu}
+      - CONTROLLER_HOST=ov-recorder
+      - CONTROLLER_PORT=8080
+      - HEARTBEAT_INTERVAL=30
+
       # MinIO integration (for future use - but no dependency needed)
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
@@ -88,6 +109,9 @@ services:
       - MINIO_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
       # Application profile
       - SPRING_PROFILES_ACTIVE=dev
+      # Swagger Configuration (dev/test only)
+      - SPRINGDOC_API_DOCS_ENABLED=true
+      - SPRINGDOC_SWAGGER_UI_ENABLED=true
     depends_on:
       - redis
       # Removed minio-mc dependency - HA Controller doesn't need MinIO to be ready
