@@ -102,6 +102,13 @@ services:
       - CONTROLLER_PORT=8080
       - HEARTBEAT_INTERVAL=30
 
+      # OpenVidu Webhook Relay Configuration
+      - OPENVIDU_WEBHOOK_ENDPOINT=${OPENVIDU_WEBHOOK_ENDPOINT:-}
+      - OPENVIDU_WEBHOOK_HEADERS=${OPENVIDU_WEBHOOK_HEADERS:-}
+      - OPENVIDU_WEBHOOK_TIMEOUT=5000
+      - OPENVIDU_WEBHOOK_RETRY_ATTEMPTS=3
+      - OPENVIDU_WEBHOOK_RETRY_DELAY=1000
+
       # MinIO integration (for future use - but no dependency needed)
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}

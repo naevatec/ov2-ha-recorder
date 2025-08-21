@@ -35,6 +35,9 @@ public class SecurityConfig {
             .requestMatchers("/actuator/health").permitAll()
             .requestMatchers("/api/sessions/health").permitAll()
 
+            // OpenVidu Webhook endpoints (no auth required - OpenVidu doesn't send auth)
+            .requestMatchers("/openvidu/webhook/**").permitAll()
+
             // Swagger/OpenAPI endpoints (no auth required for documentation)
             .requestMatchers("/swagger-ui/**").permitAll()
             .requestMatchers("/swagger-ui.html").permitAll()
