@@ -2,36 +2,31 @@ package com.naevatec.ovrecorder.service;
 
 import com.naevatec.ovrecorder.model.RecordingSession;
 import com.naevatec.ovrecorder.repository.SessionRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class SessionService {
-
-  private static final Logger logger = LoggerFactory.getLogger(SessionService.class);
 
   private final SessionRepository sessionRepository;
 
   @Value("${app.session.max-inactive-time:600}")
   private long maxInactiveTimeSeconds;
 
-  public SessionService(SessionRepository sessionRepository) {
-    this.sessionRepository = sessionRepository;
-  }
-
   /**
    * Create a new recording session
    */
   public RecordingSession createSession(String sessionId, String clientId, String clientHost) {
-    logger.info("Creating new session: {} for client: {}", sessionId, clientId);
+    log.info("Creating new session: {} for client: {}", sessionId, clientId);
 
     if (sessionRepository.exists(sessionId)) {
       throw new IllegalArgumentException("Session with ID " + sessionId + " already exists");
@@ -40,7 +35,7 @@ public class SessionService {
     RecordingSession session = new RecordingSession(sessionId, clientId, clientHost);
     sessionRepository.save(session);
 
-    logger.info("Session created successfully: {}", sessionId);
+    log.info("Session created successfully: {}", sessionId);
     return session;
   }
 
@@ -72,7 +67,7 @@ public class SessionService {
     Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
 
     if (sessionOpt.isEmpty()) {
-      logger.warn("Attempted to update heartbeat for non-existent session: {}", sessionId);
+      log.warn("Attempted to update heartbeat for non-existent session: {}", sessionId);
       return false;
     }
 
@@ -80,10 +75,10 @@ public class SessionService {
 
     if (lastChunk != null && !lastChunk.isEmpty()) {
       session.updateHeartbeat(lastChunk);
-      logger.debug("Updated heartbeat for session: {} with chunk: {}", sessionId, lastChunk);
+      log.debug("Updated heartbeat for session: {} with chunk: {}", sessionId, lastChunk);
     } else {
       session.updateHeartbeat();
-      logger.debug("Updated heartbeat for session: {}", sessionId);
+      log.debug("Updated heartbeat for session: {}", sessionId);
     }
 
     sessionRepository.update(session);
@@ -97,7 +92,7 @@ public class SessionService {
     Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
 
     if (sessionOpt.isEmpty()) {
-      logger.warn("Attempted to update status for non-existent session: {}", sessionId);
+      log.warn("Attempted to update status for non-existent session: {}", sessionId);
       return false;
     }
 
@@ -106,7 +101,7 @@ public class SessionService {
     session.updateHeartbeat(); // Update heartbeat when status changes
     sessionRepository.update(session);
 
-    logger.info("Updated status for session {}: {}", sessionId, status);
+    log.info("Updated status for session {}: {}", sessionId, status);
     return true;
   }
 
@@ -117,7 +112,7 @@ public class SessionService {
     Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
 
     if (sessionOpt.isEmpty()) {
-      logger.warn("Attempted to update recording path for non-existent session: {}", sessionId);
+      log.warn("Attempted to update recording path for non-existent session: {}", sessionId);
       return false;
     }
 
@@ -126,7 +121,7 @@ public class SessionService {
     session.updateHeartbeat();
     sessionRepository.update(session);
 
-    logger.info("Updated recording path for session {}: {}", sessionId, recordingPath);
+    log.info("Updated recording path for session {}: {}", sessionId, recordingPath);
     return true;
   }
 
@@ -137,7 +132,7 @@ public class SessionService {
     Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
 
     if (sessionOpt.isEmpty()) {
-      logger.warn("Attempted to stop non-existent session: {}", sessionId);
+      log.warn("Attempted to stop non-existent session: {}", sessionId);
       return false;
     }
 
@@ -150,7 +145,7 @@ public class SessionService {
     session.setStatus(RecordingSession.SessionStatus.COMPLETED);
     sessionRepository.update(session);
 
-    logger.info("Stopped session: {}", sessionId);
+    log.info("Stopped session: {}", sessionId);
     return true;
   }
 
@@ -159,12 +154,12 @@ public class SessionService {
    */
   public boolean removeSession(String sessionId) {
     if (!sessionRepository.exists(sessionId)) {
-      logger.warn("Attempted to remove non-existent session: {}", sessionId);
+      log.warn("Attempted to remove non-existent session: {}", sessionId);
       return false;
     }
 
     sessionRepository.deleteById(sessionId);
-    logger.info("Removed session: {}", sessionId);
+    log.info("Removed session: {}", sessionId);
     return true;
   }
 
@@ -189,7 +184,7 @@ public class SessionService {
    */
   @Scheduled(fixedDelayString = "${app.session.cleanup-interval:30000}")
   public void cleanupInactiveSessions() {
-    logger.debug("Starting cleanup of inactive sessions...");
+    log.debug("Starting cleanup of inactive sessions...");
 
     try {
       // Get all active sessions
@@ -209,7 +204,7 @@ public class SessionService {
 
         // Remove inactive sessions
         sessionRepository.deleteAll(inactiveSessions);
-        logger.info("Cleaned up {} inactive sessions: {}", inactiveSessions.size(), inactiveSessions);
+        log.info("Cleaned up {} inactive sessions: {}", inactiveSessions.size(), inactiveSessions);
       }
 
       // Clean up orphaned session IDs
@@ -217,10 +212,10 @@ public class SessionService {
 
       // Log current status
       long activeCount = sessionRepository.getActiveSessionCount();
-      logger.debug("Cleanup completed. Active sessions: {}", activeCount);
+      log.debug("Cleanup completed. Active sessions: {}", activeCount);
 
     } catch (Exception e) {
-      logger.error("Error during session cleanup: {}", e.getMessage(), e);
+      log.error("Error during session cleanup: {}", e.getMessage(), e);
     }
   }
 
@@ -228,7 +223,7 @@ public class SessionService {
    * Manual cleanup trigger (can be called via REST endpoint)
    */
   public int manualCleanup() {
-    logger.info("Manual cleanup triggered");
+    log.info("Manual cleanup triggered");
 
     List<RecordingSession> sessions = sessionRepository.findAllActiveSessions();
     List<String> inactiveSessions = sessions.stream()
@@ -238,7 +233,7 @@ public class SessionService {
 
     if (!inactiveSessions.isEmpty()) {
       sessionRepository.deleteAll(inactiveSessions);
-      logger.info("Manual cleanup removed {} sessions", inactiveSessions.size());
+      log.info("Manual cleanup removed {} sessions", inactiveSessions.size());
     }
 
     sessionRepository.cleanupOrphanedSessions();

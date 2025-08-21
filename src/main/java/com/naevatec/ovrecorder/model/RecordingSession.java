@@ -1,14 +1,23 @@
 package com.naevatec.ovrecorder.model;
 
 import java.time.LocalDateTime;
-import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.ToString;
 
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString(exclude = {"metadata"}) // Exclude metadata from toString to avoid log pollution
 public class RecordingSession {
 
   @NotBlank(message = "Session ID cannot be blank")
@@ -24,15 +33,18 @@ public class RecordingSession {
 
   @NotNull(message = "Status cannot be null")
   @JsonProperty("status")
-  private SessionStatus status;
+  @Builder.Default
+  private SessionStatus status = SessionStatus.STARTING;
 
   @JsonProperty("createdAt")
   @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-  private LocalDateTime createdAt;
+  @Builder.Default
+  private LocalDateTime createdAt = LocalDateTime.now();
 
   @JsonProperty("lastHeartbeat")
   @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-  private LocalDateTime lastHeartbeat;
+  @Builder.Default
+  private LocalDateTime lastHeartbeat = LocalDateTime.now();
 
   @JsonProperty("recordingPath")
   private String recordingPath;
@@ -43,91 +55,19 @@ public class RecordingSession {
   @JsonProperty("lastChunk")
   private String lastChunk;
 
-  // Constructors
-  public RecordingSession() {
+  @JsonProperty("active")
+  @Builder.Default
+  private Boolean active = true;
+
+  // Custom constructor for backward compatibility
+  public RecordingSession(String sessionId, String clientId, String clientHost) {
+    this.sessionId = sessionId;
+    this.clientId = clientId;
+    this.clientHost = clientHost;
+    this.status = SessionStatus.STARTING;
     this.createdAt = LocalDateTime.now();
     this.lastHeartbeat = LocalDateTime.now();
-    this.status = SessionStatus.STARTING;
-  }
-
-  public RecordingSession(String sessionId, String clientId, String clientHost) {
-    this();
-    this.sessionId = sessionId;
-    this.clientId = clientId;
-    this.clientHost = clientHost;
-  }
-
-  // Getters and Setters
-  public String getSessionId() {
-    return sessionId;
-  }
-
-  public void setSessionId(String sessionId) {
-    this.sessionId = sessionId;
-  }
-
-  public String getClientId() {
-    return clientId;
-  }
-
-  public void setClientId(String clientId) {
-    this.clientId = clientId;
-  }
-
-  public String getClientHost() {
-    return clientHost;
-  }
-
-  public void setClientHost(String clientHost) {
-    this.clientHost = clientHost;
-  }
-
-  public SessionStatus getStatus() {
-    return status;
-  }
-
-  public void setStatus(SessionStatus status) {
-    this.status = status;
-  }
-
-  public LocalDateTime getCreatedAt() {
-    return createdAt;
-  }
-
-  public void setCreatedAt(LocalDateTime createdAt) {
-    this.createdAt = createdAt;
-  }
-
-  public LocalDateTime getLastHeartbeat() {
-    return lastHeartbeat;
-  }
-
-  public void setLastHeartbeat(LocalDateTime lastHeartbeat) {
-    this.lastHeartbeat = lastHeartbeat;
-  }
-
-  public String getRecordingPath() {
-    return recordingPath;
-  }
-
-  public void setRecordingPath(String recordingPath) {
-    this.recordingPath = recordingPath;
-  }
-
-  public String getMetadata() {
-    return metadata;
-  }
-
-  public void setMetadata(String metadata) {
-    this.metadata = metadata;
-  }
-
-  public String getLastChunk() {
-    return lastChunk;
-  }
-
-  public void setLastChunk(String lastChunk) {
-    this.lastChunk = lastChunk;
+    this.active = true;
   }
 
   // Utility methods
@@ -141,7 +81,9 @@ public class RecordingSession {
   }
 
   public boolean isActive() {
-    return status == SessionStatus.RECORDING || status == SessionStatus.STARTING;
+    // Check both the active flag and status
+    return Boolean.TRUE.equals(active) &&
+           (status == SessionStatus.RECORDING || status == SessionStatus.STARTING);
   }
 
   public boolean isInactive(long maxInactiveSeconds) {
@@ -151,33 +93,30 @@ public class RecordingSession {
     return lastHeartbeat.isBefore(LocalDateTime.now().minusSeconds(maxInactiveSeconds));
   }
 
+  public void markAsInactive() {
+    this.active = false;
+    this.status = SessionStatus.INACTIVE;
+  }
+
+  public void markAsActive() {
+    this.active = true;
+    if (this.status == SessionStatus.INACTIVE) {
+      this.status = SessionStatus.STARTING;
+    }
+  }
+
+  // Custom equals and hashCode based only on sessionId (Lombok @Data provides default implementation)
   @Override
   public boolean equals(Object o) {
-    if (this == o)
-      return true;
-    if (o == null || getClass() != o.getClass())
-      return false;
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
     RecordingSession that = (RecordingSession) o;
-    return Objects.equals(sessionId, that.sessionId);
+    return sessionId != null ? sessionId.equals(that.sessionId) : that.sessionId == null;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(sessionId);
-  }
-
-  @Override
-  public String toString() {
-    return "RecordingSession{" +
-        "sessionId='" + sessionId + '\'' +
-        ", clientId='" + clientId + '\'' +
-        ", clientHost='" + clientHost + '\'' +
-        ", status=" + status +
-        ", createdAt=" + createdAt +
-        ", lastHeartbeat=" + lastHeartbeat +
-        ", recordingPath='" + recordingPath + '\'' +
-        ", lastChunk='" + lastChunk + '\'' +
-        '}';
+    return sessionId != null ? sessionId.hashCode() : 0;
   }
 
   // Session Status Enum

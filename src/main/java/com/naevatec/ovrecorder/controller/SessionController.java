@@ -13,8 +13,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,15 +28,11 @@ import java.util.Optional;
 @RequestMapping("/api/sessions")
 @Tag(name = "Recording Sessions", description = "Simplified API for managing recording sessions in HA environment")
 @SecurityRequirement(name = "basicAuth")
+@RequiredArgsConstructor
+@Slf4j
 public class SessionController {
 
-  private static final Logger logger = LoggerFactory.getLogger(SessionController.class);
-
   private final SessionService sessionService;
-
-  public SessionController(SessionService sessionService) {
-    this.sessionService = sessionService;
-  }
 
   /**
    * Create a new recording session
@@ -65,14 +61,14 @@ public class SessionController {
           request.getClientId(),
           clientHost);
 
-      logger.info("Created session via API: {} from {}", session.getSessionId(), clientHost);
+      log.info("Created session via API: {} from {}", session.getSessionId(), clientHost);
       return ResponseEntity.status(HttpStatus.CREATED).body(session);
 
     } catch (IllegalArgumentException e) {
-      logger.warn("Failed to create session: {}", e.getMessage());
+      log.warn("Failed to create session: {}", e.getMessage());
       return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     } catch (Exception e) {
-      logger.error("Error creating session: {}", e.getMessage(), e);
+      log.error("Error creating session: {}", e.getMessage(), e);
       return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
           .body(Map.of("error", "Internal server error"));
     }
@@ -291,17 +287,16 @@ public class SessionController {
     return request.getRemoteAddr();
   }
 
-  // Request DTOs
+  // Request DTOs with Lombok
   @Schema(description = "Request object for creating a new recording session")
+  @lombok.Data
   public static class CreateSessionRequest {
     @Schema(description = "Unique identifier for the recording session",
-            example = "112_-_eiglesia_emer_minusculas_-_27541_-_2_-_e7f0bc2500695967644cc47135eb105f",
-            required = true)
+            example = "112_-_eiglesia_emer_minusculas_-_27541_-_2_-_e7f0bc2500695967644cc47135eb105f")
     private String sessionId;
 
     @Schema(description = "Identifier of the client creating the session",
-            example = "client-01",
-            required = true)
+            example = "client-01")
     private String clientId;
 
     @Schema(description = "IP address or hostname of the client (optional, will be auto-detected if not provided)",
@@ -311,25 +306,13 @@ public class SessionController {
     @Schema(description = "Optional metadata for the session",
             example = "Recording metadata or additional info")
     private String metadata;
-
-    // Getters and setters
-    public String getSessionId() { return sessionId; }
-    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
-    public String getClientId() { return clientId; }
-    public void setClientId(String clientId) { this.clientId = clientId; }
-    public String getClientHost() { return clientHost; }
-    public void setClientHost(String clientHost) { this.clientHost = clientHost; }
-    public String getMetadata() { return metadata; }
-    public void setMetadata(String metadata) { this.metadata = metadata; }
   }
 
   @Schema(description = "Request object for heartbeat updates")
+  @lombok.Data
   public static class HeartbeatRequest {
     @Schema(description = "Name of the last chunk file created",
             example = "0001.mp4")
     private String lastChunk;
-
-    public String getLastChunk() { return lastChunk; }
-    public void setLastChunk(String lastChunk) { this.lastChunk = lastChunk; }
   }
 }

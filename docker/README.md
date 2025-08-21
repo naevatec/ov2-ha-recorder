@@ -4,17 +4,20 @@ A comprehensive development environment for building and testing OpenVidu record
 
 ## 🎯 Project Overview
 
-This project provides tools to replace the standard OpenVidu recording image with a custom NaevaTec version that supports HA (High Availability) recording functionality with S3-compatible storage backends and centralized session management through an integrated HA Controller.
+This project provides tools to replace the standard OpenVidu recording image with a custom NaevaTec version that supports HA (High Availability) recording functionality with S3-compatible storage backends and centralized session management through an integrated HA Controller with real-time chunk tracking and heartbeat monitoring.
 
 ### Key Features
 
 - **Custom OpenVidu Recording Image**: Replace standard images with NaevaTec-enhanced versions
 - **HA Controller Integration**: SpringBoot-based session management with Redis storage
+- **Real-time Chunk Tracking**: Monitor recording progress with chunk-level precision
+- **Simplified Session Management**: Registration, heartbeats with chunk info, and deregistration only
 - **MinIO S3 Integration**: Local S3-compatible storage for development and testing
-- **Session Management**: Real-time session tracking, heartbeat monitoring, and automatic cleanup
+- **Swagger API Documentation**: Interactive API documentation with profile-based access control
+- **Session Heartbeat Monitoring**: Automatic heartbeat with last chunk information
 - **Environment Validation**: Comprehensive validation of configuration variables
 - **Development Tools**: Helper scripts for managing the complete development workflow
-- **Flexible Deployment**: Support for both local and S3 storage modes with optional HA Controller
+- **Fast Container Shutdown**: Optimized for 30-second container deadline compliance
 
 ## 📁 Project Structure
 
@@ -29,22 +32,29 @@ project/
 │   │   │               ├── OvRecorderApplication.java    # Main SpringBoot application
 │   │   │               ├── config/
 │   │   │               │   ├── RedisConfig.java         # Redis configuration
-│   │   │               │   └── SecurityConfig.java      # Security configuration
+│   │   │               │   ├── SecurityConfig.java      # Security configuration
+│   │   │               │   └── SwaggerConfig.java       # Swagger/OpenAPI configuration
 │   │   │               ├── controller/
-│   │   │               │   └── SessionController.java   # REST API endpoints
+│   │   │               │   └── SessionController.java   # Simplified REST API endpoints
 │   │   │               ├── model/
-│   │   │               │   └── RecordingSession.java   # Session data model
+│   │   │               │   └── RecordingSession.java   # Session data model with chunk tracking
 │   │   │               ├── repository/
 │   │   │               │   └── SessionRepository.java  # Redis operations
 │   │   │               └── service/
 │   │   │                   └── SessionService.java     # Business logic
 │   │   └── resources/
-│   │       └── application.properties                  # Configuration file
+│   │       ├── application.properties                  # Main configuration
+│   │       ├── application-dev.properties             # Development profile
+│   │       ├── application-test.properties            # Test profile
+│   │       └── application-prod.properties            # Production profile
 ├── server/                        # HA Controller build context
 │   └── Dockerfile                 # HA Controller container build
 ├── recorder/                      # OpenVidu recording build context
 │   ├── Dockerfile                 # OpenVidu recording container build
 │   ├── scripts/                   # Recording scripts (mounted read-only)
+│   │   ├── composed.sh           # Enhanced main recording script with HA integration
+│   │   ├── session-register.sh   # Session registration script
+│   │   └── recorder-session-manager.sh  # Background heartbeat and chunk tracking
 │   └── utils/                     # Recording utilities (mounted read-only)
 ├── data/                          # Persistent data storage
 │   ├── minio/data/               # MinIO server data
@@ -82,19 +92,33 @@ MINIO_API_PORT=9000                  # MinIO API port
 MINIO_CONSOLE_PORT=9001              # MinIO console port
 
 # HA Controller Configuration
-HA_RECORDER_USERNAME=recorder        # HA Controller API username
-HA_RECORDER_PASSWORD=rec0rd3r_2024!  # HA Controller API password
+CONTROLLER_HOST=ov-recorder          # HA Controller hostname (usually service name)
+CONTROLLER_PORT=8080                 # HA Controller port
+APP_SECURITY_USERNAME=recorder       # HA Controller API username
+APP_SECURITY_PASSWORD=rec0rd3r_2024! # HA Controller API password
+HEARTBEAT_INTERVAL=30                # Heartbeat interval in seconds
+RECORDING_BASE_URL=https://devel.naevatec.com:4443/openvidu  # Base URL for recordings
+
+# HA Controller Internal Configuration
 HA_RECORDER_PORT=8080               # HA Controller external port
-HA_SESSION_CLEANUP_INTERVAL=30000   # Session review frecuency in milliseconds
+HA_SESSION_CLEANUP_INTERVAL=30000   # Session review frequency in milliseconds
 HA_SESSION_MAX_INACTIVE_TIME=600    # Max time before session cleanup
 
 # Docker Configuration
 TAG=2.31.0                          # OpenVidu image tag
+
+# Swagger Configuration (Profile-based)
+SPRING_PROFILES_ACTIVE=dev          # 'dev', 'test', or 'prod'
+SWAGGER_ENABLED=true                # Enable/disable Swagger (auto-disabled in prod)
+SWAGGER_UI_ENABLED=true             # Enable/disable Swagger UI
 ```
 
 ### Critical Requirements
 
-⚠️ **Important**: `HA_AWS_S3_SERVICE_ENDPOINT` must match `http://YOUR_PRIVATE_IP:MINIO_API_PORT`
+⚠️ **Important**: 
+- `HA_AWS_S3_SERVICE_ENDPOINT` must match `http://YOUR_PRIVATE_IP:MINIO_API_PORT`
+- `CONTROLLER_HOST` should match the Docker service name (`ov-recorder`)
+- `APP_SECURITY_USERNAME` and `APP_SECURITY_PASSWORD` must match between recorder and HA Controller
 
 ## 🐳 Docker Services
 
@@ -114,7 +138,7 @@ The project uses Docker Compose v2 with the following services:
 
 - **Infrastructure services**: MinIO, Redis, HA Controller - always available
 - **Recorder service**: Uses profiles (`recorder`, `test`) - starts when explicitly requested
-- **HA Controller**: Always included, provides session management API
+- **HA Controller**: Always included, provides session management API with Swagger documentation
 
 ### Volumes and Data Persistence
 
@@ -134,6 +158,7 @@ The project uses Docker Compose v2 with the following services:
    # Copy the provided .env template and customize
    # Update HA_AWS_S3_SERVICE_ENDPOINT with your private IP
    # Configure HA Controller credentials
+   # Set CONTROLLER_HOST to match your Docker service name
    ```
 
 2. **Validate configuration**:
@@ -151,6 +176,12 @@ The project uses Docker Compose v2 with the following services:
    curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/health
    ```
 
+5. **Access Swagger Documentation** (development/test only):
+   ```bash
+   # Open browser to: http://localhost:8080/swagger-ui.html
+   # Swagger is automatically disabled in production profile
+   ```
+
 ### Workflow Scripts
 
 #### Main Deployment Script
@@ -158,17 +189,18 @@ The project uses Docker Compose v2 with the following services:
 **`./replace-openvidu-image.sh <TAG>`**
 
 Complete deployment workflow with HA Controller integration:
-1. ✅ Validates environment configuration
-2. 📁 Creates all required directories (Redis, controller logs, etc.)
-3. 🔨 Builds HA Controller (SpringBoot application)
+1. ✅ Validates environment configuration including HA Controller settings
+2. 🗂 Creates all required directories (Redis, controller logs, etc.)
+3. 🔨 Builds HA Controller (SpringBoot application with Maven)
 4. 🔍 Checks for existing OpenVidu images with old maintainer labels
 5. 🗑️ Removes old images if found
-6. 🔨 Builds new custom OpenVidu recording image with NaevaTec maintainer label
+6. 🔨 Builds new custom OpenVidu recording image with HA integration scripts
 7. 🚀 Starts MinIO services and waits for setup completion
 8. 🚀 Starts Redis service for session storage
 9. 🚀 Starts HA Controller and waits for readiness
 10. 🧪 Tests HA Controller API functionality
-11. ✅ Verifies complete deployment success
+11. 📖 Verifies Swagger documentation accessibility (dev/test profiles)
+12. ✅ Verifies complete deployment success
 
 ```bash
 ./replace-openvidu-image.sh 2.31.0
@@ -185,6 +217,8 @@ Comprehensive environment validation including HA Controller settings:
 - ✅ Verifies endpoint consistency
 - ✅ Validates S3 bucket naming conventions
 - ✅ Checks HA Controller configuration
+- ✅ Validates authentication credentials
+- ✅ Verifies heartbeat interval settings
 - 🔧 Offers auto-fix for common issues
 
 ```bash
@@ -225,31 +259,36 @@ Development and testing utilities with full HA Controller support:
 
 ## 📡 HA Controller API
 
-The integrated HA Controller provides a comprehensive REST API for session management:
+The integrated HA Controller provides a simplified REST API for essential session management with real-time chunk tracking:
 
 ### Authentication
 
 All API endpoints require HTTP Basic Authentication:
-- **Username**: `recorder` (configurable via `HA_RECORDER_USERNAME`)
-- **Password**: `rec0rd3r_2024!` (configurable via `HA_RECORDER_PASSWORD`)
+- **Username**: `recorder` (configurable via `APP_SECURITY_USERNAME`)
+- **Password**: `rec0rd3r_2024!` (configurable via `APP_SECURITY_PASSWORD`)
 
-### API Endpoints
+### Simplified API Design
 
-#### Session Management
+The HA Controller uses a streamlined approach focusing on essential operations:
 
-| Method   | Endpoint                       | Description                  |
-| -------- | ------------------------------ | ---------------------------- |
-| `POST`   | `/api/sessions`                | Create new recording session |
-| `GET`    | `/api/sessions`                | List all active sessions     |
-| `GET`    | `/api/sessions/{id}`           | Get session by ID            |
-| `PUT`    | `/api/sessions/{id}/heartbeat` | Update session heartbeat     |
-| `PUT`    | `/api/sessions/{id}/status`    | Update session status        |
-| `PUT`    | `/api/sessions/{id}/path`      | Update recording path        |
-| `PUT`    | `/api/sessions/{id}/stop`      | Stop session                 |
-| `DELETE` | `/api/sessions/{id}`           | Remove session               |
-| `GET`    | `/api/sessions/{id}/active`    | Check if session is active   |
+1. **Session Registration** - Register new recording sessions
+2. **Heartbeat with Chunk Tracking** - Send heartbeats with last chunk information
+3. **Session Deregistration** - Clean removal of completed sessions
 
-#### Maintenance
+### Core API Endpoints
+
+#### Essential Session Management
+
+| Method   | Endpoint                       | Description                                    |
+| -------- | ------------------------------ | ---------------------------------------------- |
+| `POST`   | `/api/sessions`                | Create new recording session (registration)    |
+| `GET`    | `/api/sessions`                | List all active sessions                       |
+| `GET`    | `/api/sessions/{id}`           | Get session by ID                              |
+| `PUT`    | `/api/sessions/{id}/heartbeat` | Update session heartbeat with chunk info      |
+| `DELETE` | `/api/sessions/{id}`           | Remove session (deregistration)               |
+| `GET`    | `/api/sessions/{id}/active`    | Check if session is active                     |
+
+#### Maintenance & Monitoring
 
 | Method | Endpoint                | Description                         |
 | ------ | ----------------------- | ----------------------------------- |
@@ -258,30 +297,36 @@ All API endpoints require HTTP Basic Authentication:
 
 ### API Usage Examples
 
-#### Create a Recording Session
+#### Register a Recording Session
 ```bash
 curl -u recorder:rec0rd3r_2024! -X POST \
   http://localhost:8080/api/sessions \
   -H "Content-Type: application/json" \
   -d '{
-    "sessionId": "rec-001",
-    "clientId": "camera-01",
-    "clientHost": "192.168.1.100"
+    "sessionId": "eiglesia07_1755710237963",
+    "clientId": "recorder-container01",
+    "clientHost": "192.168.1.100",
+    "metadata": "{\"id\":\"eiglesia07\",\"status\":\"started\",\"outputMode\":\"COMPOSED\"}"
   }'
 ```
 
-#### Send Heartbeat
+#### Send Heartbeat with Chunk Information
 ```bash
+# Heartbeat with new chunk
 curl -u recorder:rec0rd3r_2024! -X PUT \
-  http://localhost:8080/api/sessions/rec-001/heartbeat
+  http://localhost:8080/api/sessions/eiglesia07_1755710237963/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{"lastChunk": "0003.mp4"}'
+
+# Simple heartbeat (no new chunks)
+curl -u recorder:rec0rd3r_2024! -X PUT \
+  http://localhost:8080/api/sessions/eiglesia07_1755710237963/heartbeat
 ```
 
-#### Update Session Status
+#### Deregister Session
 ```bash
-curl -u recorder:rec0rd3r_2024! -X PUT \
-  http://localhost:8080/api/sessions/rec-001/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "RECORDING"}'
+curl -u recorder:rec0rd3r_2024! -X DELETE \
+  http://localhost:8080/api/sessions/eiglesia07_1755710237963
 ```
 
 #### List All Sessions
@@ -289,32 +334,110 @@ curl -u recorder:rec0rd3r_2024! -X PUT \
 curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions
 ```
 
-### Shell Script Integration
+### Session Data Model
 
-The project includes `example-scripts.sh` with ready-to-use functions for shell script integration:
+Sessions include comprehensive tracking information:
+
+```json
+{
+  "sessionId": "eiglesia07_1755710237963",
+  "clientId": "recorder-container01",
+  "clientHost": "192.168.1.100",
+  "status": "RECORDING",
+  "createdAt": "2024-01-20 10:00:00",
+  "lastHeartbeat": "2024-01-20 10:30:00",
+  "lastChunk": "0003.mp4",
+  "recordingPath": null,
+  "metadata": "{\"id\":\"eiglesia07\",\"status\":\"started\"}"
+}
+```
+
+### Swagger Documentation
+
+Interactive API documentation is available in development and test environments:
+
+- **URL**: http://localhost:8080/swagger-ui.html
+- **Profiles**: Enabled in `dev` and `test`, disabled in `prod`
+- **Authentication**: Use the "Authorize" button with your credentials
+- **Features**: 
+  - Interactive API testing
+  - Request/response examples
+  - Schema documentation
+  - Authentication testing
+
+## 🔧 HA Integration in Recording Container
+
+### Recorder Scripts Integration
+
+The recording container includes integrated HA Controller session management:
+
+#### Core Scripts
+
+1. **`session-register.sh`** - Quick session registration
+   - Extracts session info from recording metadata JSON
+   - Registers with HA Controller
+   - Exits immediately after registration
+
+2. **`recorder-session-manager.sh`** - Background heartbeat manager
+   - Monitors chunk directory for new .mp4 files
+   - Sends heartbeat with chunk information when new chunks detected
+   - Runs continuously in background during recording
+   - Handles graceful termination
+
+3. **`composed.sh`** - Enhanced main recording script
+   - Integrated HA Controller session lifecycle management
+   - Optimized for 30-second container shutdown deadline
+   - Background HA operations to avoid blocking recording
+
+### Integration Timeline
+
+```
+T+0s    📝 Create recording JSON metadata
+T+1s    🔗 Register session with HA Controller (background)
+T+2s    💓 Start heartbeat manager with chunk monitoring (background)
+T+3s    🎬 Start Chrome and FFmpeg recording
+...     💗 Send heartbeats every 30s with chunk progression
+T+180s  🛑 FFmpeg stops, recording complete
+T+181s  🧹 Terminate heartbeat manager (immediate)
+T+182s  🗑️ Deregister session from HA Controller (background)
+T+183s  🖼️ Generate thumbnail (priority task)
+T+185s  🔒 Update permissions (priority task)
+T+190s  ✅ Container exits within 30-second deadline
+```
+
+### Environment Variables in Recorder Container
+
+Add these to `/recordings/.env` in the recorder container:
 
 ```bash
-# Make script executable
-chmod +x example-scripts.sh
+# HA Controller Connection (REQUIRED)
+CONTROLLER_HOST=ov-recorder
+CONTROLLER_PORT=8080
 
-# Create session
-./example-scripts.sh create rec-001 camera-01
+# HA Controller Authentication (REQUIRED)
+APP_SECURITY_USERNAME=recorder
+APP_SECURITY_PASSWORD=rec0rd3r_2024!
 
-# Send heartbeat
-./example-scripts.sh heartbeat rec-001
+# Heartbeat Configuration (OPTIONAL - has defaults)
+HEARTBEAT_INTERVAL=30
 
-# Update status
-./example-scripts.sh status rec-001 RECORDING
-
-# Keep session alive automatically
-./example-scripts.sh keep-alive rec-001 30
+# Recording Base URL (OPTIONAL)
+RECORDING_BASE_URL=https://devel.naevatec.com:4443/openvidu
 ```
+
+### Chunk Tracking Features
+
+- **Real-time Monitoring**: Detects new .mp4 chunks as they're created
+- **Smart Updates**: Only sends chunk info when NEW chunks detected
+- **Timestamp-based Detection**: Uses file modification times for accuracy
+- **Background Processing**: Non-blocking chunk monitoring
+- **Failover Data**: Provides chunk progression for HA failover logic
 
 ## 🧪 Testing
 
 ### Container Functionality Test
 
-Tests basic OpenVidu container components:
+Tests basic OpenVidu container components with HA integration:
 
 ```bash
 ./manage-environment.sh test
@@ -327,10 +450,12 @@ Tests basic OpenVidu container components:
 - Recording directory access
 - Environment variable passing
 - HA Controller connectivity
+- Session registration scripts
+- Heartbeat functionality
 
 ### HA Controller API Test
 
-Tests complete HA Controller functionality:
+Tests complete HA Controller functionality including chunk tracking:
 
 ```bash
 ./manage-environment.sh test-ha
@@ -340,13 +465,15 @@ Tests complete HA Controller functionality:
 - Health endpoint accessibility
 - Authentication mechanisms
 - Session creation and retrieval
-- Heartbeat functionality
-- Session cleanup
+- Heartbeat functionality with chunk data
+- Session deregistration
 - API response validation
+- Swagger documentation (dev/test profiles)
+- Profile-based feature enabling/disabling
 
 ### Full Recording Test
 
-Tests complete S3 recording workflow with HA Controller:
+Tests complete S3 recording workflow with HA Controller integration:
 
 ```bash
 ./manage-environment.sh test-recorder
@@ -360,26 +487,43 @@ Tests complete S3 recording workflow with HA Controller:
 - Container startup and initialization
 - Recording service functionality
 - Session management integration
+- Chunk tracking and heartbeat progression
 
-### Manual Testing
+### Manual Testing with Swagger
 
-Start services manually for custom testing:
+1. **Start development environment**:
+   ```bash
+   ./manage-environment.sh start
+   ```
+
+2. **Access Swagger UI**: http://localhost:8080/swagger-ui.html
+
+3. **Authenticate**: Click "Authorize" button, enter credentials
+
+4. **Test endpoints**:
+   - Create session with POST `/api/sessions`
+   - Send heartbeat with PUT `/api/sessions/{id}/heartbeat`
+   - Monitor session with GET `/api/sessions/{id}`
+   - Clean up with DELETE `/api/sessions/{id}`
+
+### Manual Session Management Testing
 
 ```bash
-# Start complete environment
-./manage-environment.sh start
+# Test session lifecycle
+curl -u recorder:rec0rd3r_2024! -X POST http://localhost:8080/api/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"sessionId":"test-001","clientId":"test-client","clientHost":"localhost"}'
 
-# Start recorder with test profile
-docker compose --profile test up -d openvidu-recording
+# Test chunk tracking
+curl -u recorder:rec0rd3r_2024! -X PUT http://localhost:8080/api/sessions/test-001/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{"lastChunk":"0001.mp4"}'
 
-# Check all service logs
-docker compose logs
+# Verify session data
+curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/test-001
 
-# Test HA Controller API manually
-curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/health
-
-# Stop recorder only
-docker compose --profile test down
+# Clean up
+curl -u recorder:rec0rd3r_2024! -X DELETE http://localhost:8080/api/sessions/test-001
 ```
 
 ## 🔧 Troubleshooting
@@ -388,9 +532,20 @@ docker compose --profile test down
 
 #### Environment Validation Failures
 
+**Issue**: `CONTROLLER_HOST` not accessible
+```
+✖ HA Controller not accessible at ov-recorder:8080
+```
+
+**Solution**: Verify Docker service is running and ports are correct:
+```bash
+docker compose ps ov-recorder-ha-controller
+docker compose logs ov-recorder-ha-controller
+```
+
 **Issue**: `HA_AWS_S3_SERVICE_ENDPOINT` mismatch
 ```
-❌ HA_AWS_S3_SERVICE_ENDPOINT inconsistency!
+✖ HA_AWS_S3_SERVICE_ENDPOINT inconsistency!
    Current: http://192.168.1.100:9000
    Expected: http://172.31.0.96:9000
 ```
@@ -411,6 +566,9 @@ docker compose ps redis
 # Check HA Controller logs
 docker compose logs ov-recorder-ha-controller
 
+# Check Maven build
+mvn clean package
+
 # Rebuild HA Controller
 docker compose build ov-recorder-ha-controller
 docker compose up -d ov-recorder-ha-controller
@@ -425,53 +583,70 @@ curl -f http://localhost:8080/actuator/health
 curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/health
 
 # Check port configuration
-echo $HA_RECORDER_PORT
+echo $CONTROLLER_PORT
 ```
 
-#### Container Start Failures
-
-**Issue**: MinIO setup fails
+**Issue**: Swagger not accessible
 ```bash
-# Check setup logs
-docker compose logs minio-mc
+# Check profile setting
+echo $SPRING_PROFILES_ACTIVE
 
-# Restart MinIO services
-./manage-environment.sh stop
-./manage-environment.sh start
+# Swagger should be disabled in production
+curl http://localhost:8080/swagger-ui.html
+# Expected: 404 in prod profile, 200 in dev/test profiles
 ```
 
-**Issue**: Redis connection fails
+#### Session Management Issues
+
+**Issue**: Session registration fails
 ```bash
-# Check Redis logs
-docker compose logs redis
+# Check recorder container logs
+docker compose logs openvidu-recording | grep "HA-REG"
 
-# Check Redis data directory permissions
-ls -la ./data/redis/data
-
-# Restart Redis
-docker compose restart redis
+# Test manual registration
+curl -u recorder:rec0rd3r_2024! -X POST http://localhost:8080/api/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"sessionId":"test","clientId":"test","clientHost":"test"}'
 ```
 
-**Issue**: Recorder fails to start
+**Issue**: Heartbeat failures
 ```bash
-# Check if images exist
-docker images openvidu/openvidu-recording:2.31.0
-docker images | grep ov-recorder-ha-controller
+# Check heartbeat manager logs
+docker compose logs openvidu-recording | grep "recorder-session-manager"
 
-# Rebuild if necessary
-./replace-openvidu-image.sh 2.31.0
+# Verify chunk directory exists
+docker compose exec openvidu-recording ls -la /recordings/*/chunks/
 
-# Check recorder logs
-docker compose logs openvidu-recording
+# Test manual heartbeat
+curl -u recorder:rec0rd3r_2024! -X PUT http://localhost:8080/api/sessions/test/heartbeat
 ```
 
-#### Permission Issues
+#### Container Shutdown Issues
 
-**Issue**: Local directories not accessible
+**Issue**: Container doesn't exit within 30 seconds
 ```bash
-# Create directories with proper permissions
-mkdir -p ./data/minio/data ./data/redis/data ./data/controller/logs ./data/recorder/data
-chmod 755 ./data/minio/data ./data/redis/data ./data/controller/logs ./data/recorder/data
+# Check if HA processes are hanging
+docker compose logs openvidu-recording | grep "HA-CLEANUP"
+
+# Verify quick cleanup implementation
+docker compose exec openvidu-recording ps aux | grep session-manager
+
+# Check for stuck curl processes
+docker compose exec openvidu-recording ps aux | grep curl
+```
+
+#### Chunk Tracking Issues
+
+**Issue**: Chunk information not updating
+```bash
+# Check chunk directory permissions
+docker compose exec openvidu-recording ls -la /recordings/*/chunks/
+
+# Verify chunk detection logic
+docker compose logs openvidu-recording | grep "lastChunk"
+
+# Test chunk directory manually
+docker compose exec openvidu-recording find /recordings/*/chunks/ -name "*.mp4" -printf '%T@ %p\n' | sort -n
 ```
 
 ### Service Access
@@ -483,10 +658,12 @@ chmod 755 ./data/minio/data ./data/redis/data ./data/controller/logs ./data/reco
 - **MinIO API**: http://localhost:9000
 
 - **HA Controller API**: http://localhost:8080/api/sessions
-  - Username: `recorder` (or your `HA_RECORDER_USERNAME`)
-  - Password: `rec0rd3r_2024!` (or your `HA_RECORDER_PASSWORD`)
+  - Username: `recorder` (or your `APP_SECURITY_USERNAME`)
+  - Password: `rec0rd3r_2024!` (or your `APP_SECURITY_PASSWORD`)
 
 - **HA Controller Health**: http://localhost:8080/actuator/health
+
+- **Swagger UI**: http://localhost:8080/swagger-ui.html (dev/test profiles only)
 
 ### Log Analysis
 
@@ -494,20 +671,26 @@ chmod 755 ./data/minio/data ./data/redis/data ./data/controller/logs ./data/reco
 # All services
 docker compose logs
 
-# Specific services
-docker compose logs minio
-docker compose logs redis
+# HA Controller specific
 docker compose logs ov-recorder-ha-controller
-docker compose logs openvidu-recording
 
-# Follow logs in real-time
+# Recording container HA integration
+docker compose logs openvidu-recording | grep -E "\[HA-|session-register|recorder-session-manager"
+
+# Follow HA Controller logs in real-time
 docker compose logs -f ov-recorder-ha-controller
 
-# Filter HA Controller logs
+# Filter HA Controller errors
 docker compose logs ov-recorder-ha-controller | grep ERROR
+
+# Check session registration process
+docker compose logs openvidu-recording | grep "HA-REG"
+
+# Monitor chunk tracking
+docker compose logs openvidu-recording | grep "lastChunk"
 ```
 
-## 🗃️ HA Controller Source Code
+## 🏗️ HA Controller Source Code
 
 ### SpringBoot Application Structure
 
@@ -518,14 +701,16 @@ The HA Controller is a complete SpringBoot application with the following compon
 
 #### Configuration
 - **`RedisConfig.java`**: Redis connection and serialization configuration
-- **`SecurityConfig.java`**: HTTP Basic Authentication setup
+- **`SecurityConfig.java`**: HTTP Basic Authentication with Swagger endpoint access
+- **`SwaggerConfig.java`**: Profile-based Swagger/OpenAPI configuration
 
 #### Data Model
 - **`RecordingSession.java`**: Complete session model with JSON serialization
   - Session metadata (ID, client info, timestamps)
   - Status management (STARTING, RECORDING, PAUSED, STOPPED, etc.)
-  - Heartbeat functionality
+  - Heartbeat functionality with chunk tracking
   - Recording path tracking
+  - **New**: `lastChunk` field for chunk progression monitoring
 
 #### Data Access
 - **`SessionRepository.java`**: Redis operations wrapper
@@ -538,15 +723,16 @@ The HA Controller is a complete SpringBoot application with the following compon
 - **`SessionService.java`**: Core business logic
   - Session lifecycle management
   - Automatic cleanup scheduling
-  - Heartbeat processing
+  - **Enhanced**: Heartbeat processing with chunk information
   - Status transitions
 
 #### REST API
-- **`SessionController.java`**: Complete REST API implementation
-  - All CRUD endpoints
+- **`SessionController.java`**: Simplified REST API implementation
+  - **Streamlined**: Focus on essential operations only
+  - Registration, heartbeat with chunks, deregistration
   - Authentication integration
   - Error handling
-  - Request/response DTOs
+  - Comprehensive Swagger documentation
 
 ### Development with HA Controller Source
 
@@ -556,6 +742,7 @@ The HA Controller is a complete SpringBoot application with the following compon
    ```bash
    # Import Maven project from root directory
    # Ensure Java 17+ is configured
+   # Set active profile: -Dspring.profiles.active=dev
    # Run OvRecorderApplication.java directly for development
    ```
 
@@ -567,8 +754,11 @@ The HA Controller is a complete SpringBoot application with the following compon
    # Run tests
    mvn test
 
-   # Run application locally
-   mvn spring-boot:run
+   # Run application locally (development profile)
+   mvn spring-boot:run -Dspring-boot.run.profiles=dev
+
+   # Run with specific profile
+   mvn spring-boot:run -Dspring-boot.run.profiles=test
    ```
 
 3. **Docker Development**:
@@ -579,8 +769,8 @@ The HA Controller is a complete SpringBoot application with the following compon
    # Start dependencies (Redis)
    docker compose up -d redis
 
-   # Start HA Controller
-   docker compose up -d ov-recorder-ha-controller
+   # Start HA Controller with development profile
+   SPRING_PROFILES_ACTIVE=dev docker compose up -d ov-recorder-ha-controller
    ```
 
 #### Source Code Modifications
@@ -588,15 +778,19 @@ The HA Controller is a complete SpringBoot application with the following compon
 When modifying the HA Controller source:
 
 1. **Code Changes**: Edit files in `src/main/java/com/naevatec/ovrecorder/`
-2. **Configuration**: Update `src/main/resources/application.properties`
-3. **Build**: Use Maven to build the application
-4. **Deploy**: Use Docker Compose to deploy updated container
+2. **Configuration**: Update `src/main/resources/application*.properties`
+3. **Profile Management**: Use appropriate profile for development/testing
+4. **Build**: Use Maven to build the application
+5. **Deploy**: Use Docker Compose to deploy updated container
 
 ```bash
 # After making changes
 mvn clean package
 docker compose build ov-recorder-ha-controller
 docker compose up -d ov-recorder-ha-controller
+
+# Test changes
+curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/health
 ```
 
 ## 🗃️ Image Building Details
@@ -610,12 +804,14 @@ The project uses two separate Dockerfiles:
 - **Build Stage**: Maven build with dependency caching
 - **Runtime Stage**: Lightweight JRE with security hardening
 - **Features**: Health checks, non-root user, proper logging
+- **Profiles**: Support for environment-specific configurations
 
 #### OpenVidu Recording (`recorder/Dockerfile`)
 - **Base**: Ubuntu 24.04 or existing OpenVidu image
 - **Components**: Chrome, FFmpeg, PulseAudio, Xvfb
-- **Integration**: HA Controller connectivity
-- **Scripts**: Custom recording and utility scripts
+- **Integration**: HA Controller connectivity scripts
+- **Scripts**: Custom recording and utility scripts with HA integration
+- **Dependencies**: curl, jq for API communication
 - **Maintainer**: `"NaevaTec-OpenVidu eiglesia@openvidu.io"`
 
 ### Build Process
@@ -623,9 +819,11 @@ The project uses two separate Dockerfiles:
 The build process automatically:
 1. Builds HA Controller from source using Maven
 2. Removes images with old maintainer labels
-3. Builds new OpenVidu recording image with integration
+3. Builds new OpenVidu recording image with HA integration scripts
 4. Verifies correct maintainer labels
 5. Integrates all services with MinIO and Redis
+6. Tests HA Controller API functionality
+7. Validates Swagger documentation accessibility
 
 ### Image Versioning
 
@@ -645,6 +843,7 @@ Images are tagged using the `TAG` environment variable:
 - Services are exposed on localhost only
 - Redis has no authentication (internal network only)
 - HA Controller uses HTTP Basic Auth
+- Swagger UI enabled in development/test profiles only
 
 ### Production Deployment
 
@@ -654,25 +853,33 @@ For production use:
    ```bash
    HA_AWS_ACCESS_KEY=your-secure-access-key
    HA_AWS_SECRET_KEY=your-secure-secret-key
-   HA_RECORDER_USERNAME=your-secure-username
-   HA_RECORDER_PASSWORD=your-very-secure-password
+   APP_SECURITY_USERNAME=your-secure-username
+   APP_SECURITY_PASSWORD=your-very-secure-password
    ```
 
-2. **Secure Redis**:
+2. **Set production profile**:
+   ```bash
+   SPRING_PROFILES_ACTIVE=prod
+   SWAGGER_ENABLED=false
+   SWAGGER_UI_ENABLED=false
+   ```
+
+3. **Secure Redis**:
    - Enable Redis AUTH
    - Use Redis over TLS
    - Restrict network access
 
-3. **HA Controller Security**:
+4. **HA Controller Security**:
    - Use HTTPS with SSL certificates
    - Implement JWT tokens instead of Basic Auth
    - Add rate limiting and request validation
+   - Disable Swagger in production (automatic with prod profile)
 
-4. **Use proper bucket policies**:
+5. **Use proper bucket policies**:
    - Remove public access
    - Implement least-privilege access
 
-5. **Network security**:
+6. **Network security**:
    - Use private networks
    - Implement proper firewall rules
    - Consider TLS/SSL termination
@@ -690,8 +897,10 @@ For production use:
 
 3. **Test HA Controller locally** (optional):
    ```bash
-   mvn spring-boot:run
+   # Development mode with Swagger enabled
+   SPRING_PROFILES_ACTIVE=dev mvn spring-boot:run
    # Test on http://localhost:8080
+   # Swagger UI: http://localhost:8080/swagger-ui.html
    ```
 
 4. **Rebuild and deploy**:
@@ -720,6 +929,9 @@ mvn clean package
 docker compose build ov-recorder-ha-controller
 docker compose restart ov-recorder-ha-controller
 
+# Test Swagger after changes (dev profile)
+curl http://localhost:8080/swagger-ui.html
+
 # OpenVidu recording changes
 docker compose build openvidu-recording
 
@@ -739,11 +951,40 @@ docker compose --profile test up -d openvidu-recording
 ./manage-environment.sh test-ha
 ./manage-environment.sh test-recorder
 
-# Manual session management test
-./example-scripts.sh create test-session client-01
-./example-scripts.sh heartbeat test-session
-./example-scripts.sh status test-session RECORDING
-./example-scripts.sh stop test-session
+# Manual session management test with chunk tracking
+curl -u recorder:rec0rd3r_2024! -X POST http://localhost:8080/api/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"sessionId":"test-session","clientId":"client-01","clientHost":"localhost"}'
+
+# Test heartbeat with chunk progression
+curl -u recorder:rec0rd3r_2024! -X PUT http://localhost:8080/api/sessions/test-session/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{"lastChunk":"0001.mp4"}'
+
+curl -u recorder:rec0rd3r_2024! -X PUT http://localhost:8080/api/sessions/test-session/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{"lastChunk":"0002.mp4"}'
+
+# Verify chunk tracking
+curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/test-session
+
+# Clean up
+curl -u recorder:rec0rd3r_2024! -X DELETE http://localhost:8080/api/sessions/test-session
+```
+
+### Profile-based Testing
+
+```bash
+# Test with development profile (Swagger enabled)
+SPRING_PROFILES_ACTIVE=dev docker compose up -d ov-recorder-ha-controller
+curl http://localhost:8080/swagger-ui.html  # Should return 200
+
+# Test with production profile (Swagger disabled)
+SPRING_PROFILES_ACTIVE=prod docker compose up -d ov-recorder-ha-controller
+curl http://localhost:8080/swagger-ui.html  # Should return 404
+
+# Test API functionality in both profiles
+curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/health  # Should work in both
 ```
 
 ## 🤝 Contributing
@@ -757,6 +998,8 @@ When modifying scripts:
 3. **Maintain backward compatibility** where possible
 4. **Follow existing naming conventions**
 5. **Test with both development and production configurations**
+6. **Verify 30-second container shutdown compliance**
+7. **Test HA Controller integration functionality**
 
 ### HA Controller Development
 
@@ -765,8 +1008,11 @@ When modifying HA Controller source:
 1. **Follow SpringBoot best practices**
 2. **Maintain API compatibility**
 3. **Add comprehensive tests**
-4. **Update API documentation**
+4. **Update API documentation and Swagger annotations**
 5. **Test with real Redis instances**
+6. **Verify profile-based configuration works correctly**
+7. **Test both development and production profiles**
+8. **Ensure Swagger documentation is accurate**
 
 ### Environment Variables
 
@@ -777,6 +1023,186 @@ When adding new environment variables:
 3. **Document in this README**
 4. **Update Docker Compose if needed**
 5. **Add to HA Controller configuration if applicable**
+6. **Add to recorder container scripts if needed**
+7. **Test with all profiles (dev, test, prod)**
+
+### API Endpoint Changes
+
+When modifying API endpoints:
+
+1. **Update Swagger annotations**
+2. **Maintain backward compatibility**
+3. **Update integration scripts in recorder container**
+4. **Test with actual recording workflows**
+5. **Update example scripts and documentation**
+6. **Verify authentication requirements**
+
+## 🎯 HA Failover Implementation
+
+With the chunk tracking system in place, you can now implement intelligent failover logic:
+
+### Example Failover Detection
+
+```java
+@Component
+public class FailoverDetector {
+    
+    @Value("${app.chunk.time-size:10}")
+    private int chunkTimeSize;
+    
+    @Scheduled(fixedDelay = 30000) // Check every 30 seconds
+    public void detectFailedRecordings() {
+        List<RecordingSession> sessions = sessionService.getAllActiveSessions();
+        
+        for (RecordingSession session : sessions) {
+            long timeSinceHeartbeat = getSecondsSince(session.getLastHeartbeat());
+            
+            // If no heartbeat for 3 * CHUNK_TIME_SIZE + buffer (30s)
+            long maxInactiveTime = (chunkTimeSize * 3) + 30;
+            
+            if (timeSinceHeartbeat > maxInactiveTime) {
+                log.warn("Session {} appears failed - no heartbeat for {}s (limit: {}s)", 
+                    session.getSessionId(), timeSinceHeartbeat, maxInactiveTime);
+                
+                // Trigger failover
+                triggerRecordingFailover(session);
+            }
+        }
+    }
+    
+    @Scheduled(fixedDelay = 45000) // Check every 45 seconds
+    public void detectStuckRecordings() {
+        List<RecordingSession> sessions = sessionService.getAllActiveSessions();
+        
+        for (RecordingSession session : sessions) {
+            String currentChunk = session.getLastChunk();
+            
+            if (currentChunk != null) {
+                long timeSinceHeartbeat = getSecondsSince(session.getLastHeartbeat());
+                
+                // If same chunk for more than 2 * CHUNK_TIME_SIZE
+                long stuckThreshold = chunkTimeSize * 2;
+                
+                if (timeSinceHeartbeat > stuckThreshold && 
+                    currentChunk.equals(getPreviousChunk(session))) {
+                    
+                    log.warn("Session {} appears stuck - same chunk '{}' for {}s", 
+                        session.getSessionId(), currentChunk, timeSinceHeartbeat);
+                    
+                    // Trigger failover
+                    triggerRecordingFailover(session);
+                }
+            }
+        }
+    }
+    
+    private void triggerRecordingFailover(RecordingSession session) {
+        // Implement your failover logic here:
+        // 1. Mark session as failed
+        // 2. Start backup recorder
+        // 3. Notify monitoring systems
+        // 4. Handle chunk recovery if needed
+        
+        log.info("Triggering failover for session: {}", session.getSessionId());
+        
+        // Update session status
+        sessionService.updateSessionStatus(session.getSessionId(), 
+            RecordingSession.SessionStatus.FAILED);
+        
+        // Trigger backup recorder startup
+        backupRecorderService.startFailoverRecording(session);
+        
+        // Send notifications
+        notificationService.sendFailoverAlert(session);
+    }
+}
+```
+
+### Chunk-based Health Monitoring
+
+```java
+@RestController
+@RequestMapping("/api/monitoring")
+public class MonitoringController {
+    
+    @GetMapping("/health-detailed")
+    public ResponseEntity<Map<String, Object>> getDetailedHealth() {
+        List<RecordingSession> sessions = sessionService.getAllActiveSessions();
+        
+        Map<String, Object> health = new HashMap<>();
+        health.put("totalSessions", sessions.size());
+        health.put("timestamp", LocalDateTime.now());
+        
+        List<Map<String, Object>> sessionHealth = new ArrayList<>();
+        
+        for (RecordingSession session : sessions) {
+            Map<String, Object> sessionInfo = new HashMap<>();
+            sessionInfo.put("sessionId", session.getSessionId());
+            sessionInfo.put("lastHeartbeat", session.getLastHeartbeat());
+            sessionInfo.put("lastChunk", session.getLastChunk());
+            sessionInfo.put("secondsSinceHeartbeat", getSecondsSince(session.getLastHeartbeat()));
+            sessionInfo.put("status", session.getStatus());
+            
+            // Calculate expected vs actual chunks
+            long recordingDuration = getSecondsSince(session.getCreatedAt());
+            int expectedChunks = (int) (recordingDuration / chunkTimeSize);
+            int actualChunk = extractChunkNumber(session.getLastChunk());
+            
+            sessionInfo.put("expectedChunks", expectedChunks);
+            sessionInfo.put("actualChunks", actualChunk);
+            sessionInfo.put("chunkLag", expectedChunks - actualChunk);
+            
+            sessionHealth.add(sessionInfo);
+        }
+        
+        health.put("sessions", sessionHealth);
+        return ResponseEntity.ok(health);
+    }
+}
+```
+
+## 📊 Performance Optimization
+
+### Container Shutdown Optimization
+
+The current implementation is optimized for the 30-second container shutdown requirement:
+
+1. **Immediate Process Termination**: Use `KILL` signals instead of graceful `TERM`
+2. **Background HA Operations**: All HA calls run in background
+3. **Single API Call**: Use `DELETE` instead of multiple status updates
+4. **Parallel Execution**: HA cleanup runs parallel with essential tasks
+5. **Timeout Protection**: All API calls have short timeouts (5-10 seconds)
+
+### Expected Timeline
+
+```
+Container Shutdown Timeline (30-second deadline):
+T+0s    🛑 FFmpeg receives stop signal
+T+1s    🧹 Background HA cleanup starts (non-blocking)
+T+2s    🖼️ Thumbnail generation (priority)
+T+5s    🔒 File permissions (priority)
+T+8s    ☁️ S3 operations (if enabled)
+T+15s   ✅ All essential tasks complete
+T+30s   📦 Container exit deadline
+```
+
+### Performance Monitoring
+
+Monitor HA Controller performance:
+
+```bash
+# Check API response times
+curl -w "Time: %{time_total}s\n" -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/health
+
+# Monitor Redis performance
+docker compose exec redis redis-cli info stats
+
+# Check container resource usage
+docker stats ov-recorder-ha-controller
+
+# Monitor session cleanup efficiency
+curl -u recorder:rec0rd3r_2024! http://localhost:8080/api/sessions/cleanup
+```
 
 ## 📚 References
 
@@ -784,10 +1210,37 @@ When adding new environment variables:
 - [MinIO Documentation](https://docs.min.io/)
 - [SpringBoot Documentation](https://spring.io/projects/spring-boot)
 - [Redis Documentation](https://redis.io/documentation)
-- [NaevaTec OpenVidu Integration](https://github.com/naevatec/ov2-ha-recorder)
+- [SpringDoc OpenAPI 3 Documentation](https://springdoc.org/)
 - [Docker Compose Profiles](https://docs.docker.com/compose/profiles/)
+- [NaevaTec OpenVidu Integration](https://github.com/naevatec/ov2-ha-recorder)
+
+## 🏷️ Version History
+
+### Current Version
+- **HA Controller**: SpringBoot 3.2.12 with Java 21
+- **OpenVidu Integration**: Custom NaevaTec recording image
+- **Features**: 
+  - Simplified session management (register, heartbeat, deregister)
+  - Real-time chunk tracking
+  - Profile-based Swagger documentation
+  - 30-second container shutdown optimization
+  - Comprehensive failover detection capabilities
+
+### Key Improvements
+- **Simplified API**: Removed unnecessary status updates and complex workflows
+- **Chunk Tracking**: Real-time monitoring of recording progress
+- **Fast Shutdown**: Optimized for container deadline compliance
+- **Profile Management**: Environment-specific configurations
+- **Documentation**: Interactive Swagger UI for development
+- **Monitoring**: Enhanced session health tracking
 
 ---
 
 **NaevaTec - OpenVidu2 HA Recorder Development Environment with HA Controller**  
 For support: info@naevatec.com
+
+**Quick Links:**
+- API Documentation: http://localhost:8080/swagger-ui.html (dev/test)
+- Health Check: http://localhost:8080/api/sessions/health
+- MinIO Console: http://localhost:9001
+- Project Repository: https://github.com/naevatec/ov2-ha-recorder

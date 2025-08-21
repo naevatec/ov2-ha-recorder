@@ -1,0 +1,1765 @@
+{
+	"info": {
+		"_postman_id": "ov-recorder-ha-controller",
+		"name": "OV Recorder HA Controller API",
+		"description": "Comprehensive API collection for the OpenVidu Recorder High Availability Controller.\n\n## Overview\nThis collection provides endpoints for managing recording sessions with real-time chunk tracking, heartbeat monitoring, and session lifecycle management.\n\n## Features\n- **Session Registration**: Register new recording sessions\n- **Heartbeat with Chunk Tracking**: Send heartbeats with last chunk information\n- **Session Deregistration**: Clean removal of completed sessions\n- **Health Monitoring**: Service health checks and session status\n- **Maintenance**: Manual cleanup and administrative operations\n\n## Authentication\nAll endpoints require HTTP Basic Authentication:\n- **Username**: `recorder` (configurable via APP_SECURITY_USERNAME)\n- **Password**: `rec0rd3r_2024!` (configurable via APP_SECURITY_PASSWORD)\n\n## Environment Variables\nSet these variables in your Postman environment:\n- `base_url`: http://localhost:8080\n- `username`: recorder\n- `password`: rec0rd3r_2024!\n- `session_id`: test-session-001\n\n## Quick Start\n1. Set environment variables\n2. Test health endpoint\n3. Create a session\n4. Send heartbeats\n5. Clean up session",
+		"version": "1.0.0",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "basic",
+		"basic": [
+			{
+				"key": "username",
+				"value": "{{username}}",
+				"type": "string"
+			},
+			{
+				"key": "password",
+				"value": "{{password}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "username",
+			"value": "recorder",
+			"type": "string"
+		},
+		{
+			"key": "password",
+			"value": "rec0rd3r_2024!",
+			"type": "string"
+		},
+		{
+			"key": "session_id",
+			"value": "test-session-001",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health & Monitoring",
+			"description": "Health checks and service monitoring endpoints",
+			"item": [
+				{
+					"name": "Service Health Check",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has status field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"    pm.expect(jsonData.status).to.eql('healthy');",
+									"});",
+									"",
+									"pm.test(\"Response has activeSessions count\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('activeSessions');",
+									"    pm.expect(typeof jsonData.activeSessions).to.eql('number');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"health"
+							]
+						},
+						"description": "Returns the health status of the session controller and count of active sessions.\n\n**Response includes:**\n- Service status\n- Number of active sessions\n- Timestamp\n- Service identifier"
+					},
+					"response": [
+						{
+							"name": "Healthy Service",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/health",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"health"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"healthy\",\n  \"activeSessions\": 3,\n  \"timestamp\": \"2024-01-20T10:30:00\",\n  \"service\": \"recorder-ha-controller\"\n}"
+						}
+					]
+				},
+				{
+					"name": "SpringBoot Actuator Health",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/actuator/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"actuator",
+								"health"
+							]
+						},
+						"description": "SpringBoot Actuator health endpoint - no authentication required.\n\nUseful for load balancer health checks and basic service verification."
+					},
+					"response": [
+						{
+							"name": "Actuator Health",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/actuator/health",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"actuator",
+										"health"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"status\": \"UP\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Session Management",
+			"description": "Core session lifecycle management - registration, monitoring, and deregistration",
+			"item": [
+				{
+					"name": "Create Recording Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response has session data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('sessionId');",
+									"    pm.expect(jsonData).to.have.property('clientId');",
+									"    pm.expect(jsonData).to.have.property('status');",
+									"});",
+									"",
+									"pm.test(\"Session has correct initial status\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.be.oneOf(['STARTING', 'RECORDING']);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"clientId\": \"recorder-container01\",\n  \"clientHost\": \"192.168.1.100\",\n  \"metadata\": \"{\\\"id\\\":\\\"eiglesia07\\\",\\\"object\\\":\\\"recording\\\",\\\"outputMode\\\":\\\"COMPOSED\\\",\\\"status\\\":\\\"started\\\"}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Creates a new recording session with the provided session ID, client ID, and optional metadata.\n\n**Required fields:**\n- `sessionId`: Unique identifier for the recording session\n- `clientId`: Identifier of the client creating the session\n\n**Optional fields:**\n- `clientHost`: IP address or hostname (auto-detected if not provided)\n- `metadata`: JSON string with additional session information\n\n**Use case:** Called by recorder containers when starting a new recording to register the session with the HA Controller."
+					},
+					"response": [
+						{
+							"name": "Session Created Successfully",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"sessionId\": \"eiglesia07_1755710237963\",\n  \"clientId\": \"recorder-container01\",\n  \"clientHost\": \"192.168.1.100\",\n  \"metadata\": \"{\\\"id\\\":\\\"eiglesia07\\\",\\\"status\\\":\\\"started\\\"}\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"sessionId\": \"eiglesia07_1755710237963\",\n  \"clientId\": \"recorder-container01\",\n  \"clientHost\": \"192.168.1.100\",\n  \"status\": \"RECORDING\",\n  \"createdAt\": \"2024-01-20 10:00:00\",\n  \"lastHeartbeat\": \"2024-01-20 10:00:00\",\n  \"recordingPath\": null,\n  \"lastChunk\": null,\n  \"metadata\": \"{\\\"id\\\":\\\"eiglesia07\\\",\\\"status\\\":\\\"started\\\"}\"\n}"
+						},
+						{
+							"name": "Session Already Exists",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"sessionId\": \"existing-session\",\n  \"clientId\": \"client-01\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"error\": \"Session with ID existing-session already exists\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Session by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response has session data\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('sessionId');",
+									"        pm.expect(jsonData).to.have.property('status');",
+									"        pm.expect(jsonData).to.have.property('lastHeartbeat');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/{{session_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"{{session_id}}"
+							]
+						},
+						"description": "Retrieves a specific recording session by its session ID.\n\n**Returns:**\n- Complete session data including chunk tracking information\n- Last heartbeat timestamp\n- Current session status\n- Recording metadata\n\n**Use case:** Monitor session progress, check chunk advancement, verify session health."
+					},
+					"response": [
+						{
+							"name": "Session Found",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/eiglesia07_1755710237963",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"eiglesia07_1755710237963"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"sessionId\": \"eiglesia07_1755710237963\",\n  \"clientId\": \"recorder-container01\",\n  \"clientHost\": \"192.168.1.100\",\n  \"status\": \"RECORDING\",\n  \"createdAt\": \"2024-01-20 10:00:00\",\n  \"lastHeartbeat\": \"2024-01-20 10:30:15\",\n  \"recordingPath\": null,\n  \"lastChunk\": \"0003.mp4\",\n  \"metadata\": \"{\\\"id\\\":\\\"eiglesia07\\\",\\\"status\\\":\\\"started\\\"}\"\n}"
+						},
+						{
+							"name": "Session Not Found",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/non-existent-session",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"non-existent-session"
+									]
+								}
+							},
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				},
+				{
+					"name": "List All Active Sessions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has sessions array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('sessions');",
+									"    pm.expect(jsonData.sessions).to.be.an('array');",
+									"});",
+									"",
+									"pm.test(\"Response has count field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('count');",
+									"    pm.expect(typeof jsonData.count).to.eql('number');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Retrieves a list of all currently active recording sessions.\n\n**Returns:**\n- Array of active sessions with full details\n- Total count of active sessions\n- Timestamp of the request\n\n**Use case:** Monitor all recording activity, detect hung sessions, overview of system status."
+					},
+					"response": [
+						{
+							"name": "Active Sessions List",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"sessions\": [\n    {\n      \"sessionId\": \"eiglesia07_1755710237963\",\n      \"clientId\": \"recorder-container01\",\n      \"clientHost\": \"192.168.1.100\",\n      \"status\": \"RECORDING\",\n      \"createdAt\": \"2024-01-20 10:00:00\",\n      \"lastHeartbeat\": \"2024-01-20 10:30:15\",\n      \"lastChunk\": \"0003.mp4\",\n      \"recordingPath\": null,\n      \"metadata\": \"{}\"\n    },\n    {\n      \"sessionId\": \"test-session-002\",\n      \"clientId\": \"recorder-container02\",\n      \"clientHost\": \"192.168.1.101\",\n      \"status\": \"RECORDING\",\n      \"createdAt\": \"2024-01-20 10:15:00\",\n      \"lastHeartbeat\": \"2024-01-20 10:30:20\",\n      \"lastChunk\": \"0001.mp4\",\n      \"recordingPath\": null,\n      \"metadata\": \"{}\"\n    }\n  ],\n  \"count\": 2,\n  \"timestamp\": \"2024-01-20T10:30:30\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Heartbeat & Monitoring",
+			"description": "Session heartbeat and chunk tracking endpoints",
+			"item": [
+				{
+					"name": "Send Heartbeat with Chunk Info",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response confirms heartbeat\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('message');",
+									"        pm.expect(jsonData.message).to.include('Heartbeat updated');",
+									"    });",
+									"    ",
+									"    pm.test(\"Response includes chunk info if provided\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        if (jsonData.lastChunk) {",
+									"            pm.expect(jsonData.lastChunk).to.match(/\\d{4}\\.mp4/);",
+									"        }",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"lastChunk\": \"0003.mp4\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions/{{session_id}}/heartbeat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"{{session_id}}",
+								"heartbeat"
+							]
+						},
+						"description": "Updates the heartbeat timestamp for a session with optional chunk information.\n\n**Body (optional):**\n- `lastChunk`: Name of the most recent chunk file created (e.g., \"0003.mp4\")\n\n**Features:**\n- Updates session's last heartbeat timestamp\n- Tracks chunk progression for failover detection\n- Only sends chunk info when a NEW chunk is detected\n\n**Use case:** Sent every 30 seconds by recorder containers to indicate recording is active and provide chunk progression data."
+					},
+					"response": [
+						{
+							"name": "Heartbeat with Chunk",
+							"originalRequest": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"lastChunk\": \"0003.mp4\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions/test-session-001/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"test-session-001",
+										"heartbeat"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Heartbeat updated\",\n  \"sessionId\": \"test-session-001\",\n  \"timestamp\": \"2024-01-20T10:30:15\",\n  \"lastChunk\": \"0003.mp4\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Send Simple Heartbeat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response confirms heartbeat\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('message');",
+									"        pm.expect(jsonData.message).to.include('Heartbeat updated');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/{{session_id}}/heartbeat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"{{session_id}}",
+								"heartbeat"
+							]
+						},
+						"description": "Sends a simple heartbeat without chunk information (backward compatible).\n\n**Use case:** \n- Keep session alive when no new chunks have been created\n- Backward compatibility with systems not using chunk tracking\n- Quick health ping to indicate recording is still active"
+					},
+					"response": [
+						{
+							"name": "Simple Heartbeat",
+							"originalRequest": {
+								"method": "PUT",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/test-session-001/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"test-session-001",
+										"heartbeat"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Heartbeat updated\",\n  \"sessionId\": \"test-session-001\",\n  \"timestamp\": \"2024-01-20T10:30:45\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Check if Session is Active",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has active field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('active');",
+									"    pm.expect(typeof jsonData.active).to.eql('boolean');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/{{session_id}}/active",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"{{session_id}}",
+								"active"
+							]
+						},
+						"description": "Checks whether a specific session is currently active.\n\n**Returns:**\n- Boolean indicating if session is active\n- Session ID\n- Timestamp of the check\n\n**Active criteria:**\n- Session exists\n- Status is RECORDING or STARTING\n- Recent heartbeat activity\n\n**Use case:** Quick status check, load balancer health verification, failover decision making."
+					},
+					"response": [
+						{
+							"name": "Session Active",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/test-session-001/active",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"test-session-001",
+										"active"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"sessionId\": \"test-session-001\",\n  \"active\": true,\n  \"timestamp\": \"2024-01-20T10:30:00\"\n}"
+						},
+						{
+							"name": "Session Inactive",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/inactive-session/active",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"inactive-session",
+										"active"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"sessionId\": \"inactive-session\",\n  \"active\": false,\n  \"timestamp\": \"2024-01-20T10:30:00\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Session Lifecycle",
+			"description": "Session deregistration and cleanup operations",
+			"item": [
+				{
+					"name": "Remove Session (Deregister)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 or 404\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.test(\"Response confirms removal\", function () {",
+									"        var jsonData = pm.response.json();",
+									"        pm.expect(jsonData).to.have.property('message');",
+									"        pm.expect(jsonData.message).to.include('Session removed');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/{{session_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"{{session_id}}"
+							]
+						},
+						"description": "Permanently removes a recording session from the HA Controller (deregistration).\n\n**Use case:**\n- Called when recording completes successfully\n- Called when recording fails and needs cleanup\n- Fast cleanup during container shutdown (30-second deadline)\n- Manual session removal\n\n**Note:** This is the preferred cleanup method - faster than status updates."
+					},
+					"response": [
+						{
+							"name": "Session Removed",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/test-session-001",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"test-session-001"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Session removed\",\n  \"sessionId\": \"test-session-001\",\n  \"timestamp\": \"2024-01-20T10:30:00\"\n}"
+						},
+						{
+							"name": "Session Not Found",
+							"originalRequest": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/non-existent",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"non-existent"
+									]
+								}
+							},
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "",
+							"header": [],
+							"cookie": [],
+							"body": ""
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Maintenance & Admin",
+			"description": "Administrative and maintenance operations",
+			"item": [
+				{
+					"name": "Manual Session Cleanup",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has cleanup info\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('message');",
+									"    pm.expect(jsonData).to.have.property('removedSessions');",
+									"    pm.expect(typeof jsonData.removedSessions).to.eql('number');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/cleanup",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"cleanup"
+							]
+						},
+						"description": "Manually triggers cleanup of sessions that haven't sent heartbeats within the configured timeout period.\n\n**Returns:**\n- Number of sessions removed\n- Cleanup completion message\n- Timestamp\n\n**Cleanup criteria:**\n- Sessions inactive for more than configured timeout\n- Orphaned session references\n- Stale Redis entries\n\n**Use case:** Manual maintenance, debugging stuck sessions, administrative cleanup."
+					},
+					"response": [
+						{
+							"name": "Cleanup Completed",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/cleanup",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"cleanup"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Manual cleanup completed\",\n  \"removedSessions\": 3,\n  \"timestamp\": \"2024-01-20T10:30:00\"\n}"
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Complete Workflow Examples",
+			"description": "End-to-end workflow examples demonstrating common use cases",
+			"item": [
+				{
+					"name": "Complete Recording Lifecycle",
+					"item": [
+						{
+							"name": "1. Register Session",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Session created successfully\", function () {",
+											"    pm.response.to.have.status(201);",
+											"});",
+											"",
+											"// Store session ID for next requests",
+											"if (pm.response.code === 201) {",
+											"    var jsonData = pm.response.json();",
+											"    pm.collectionVariables.set('workflow_session_id', jsonData.sessionId);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"sessionId\": \"workflow-demo-{{$randomUUID}}\",\n  \"clientId\": \"recorder-demo\",\n  \"clientHost\": \"192.168.1.100\",\n  \"metadata\": \"{\\\"demo\\\":\\\"complete-workflow\\\",\\\"type\\\":\\\"test\\\"}\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions"
+									]
+								},
+								"description": "Step 1: Register new recording session when recording starts."
+							}
+						},
+						{
+							"name": "2. Send Initial Heartbeat",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Heartbeat accepted\", function () {",
+											"    pm.response.to.have.status(200);",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "PUT",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{workflow_session_id}}",
+										"heartbeat"
+									]
+								},
+								"description": "Step 2: Send initial heartbeat to indicate recording is active."
+							}
+						},
+						{
+							"name": "3. Send Heartbeat with First Chunk",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Heartbeat with chunk accepted\", function () {",
+											"    pm.response.to.have.status(200);",
+											"    var jsonData = pm.response.json();",
+											"    pm.expect(jsonData).to.have.property('lastChunk');",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"lastChunk\": \"0001.mp4\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{workflow_session_id}}",
+										"heartbeat"
+									]
+								},
+								"description": "Step 3: Send heartbeat with first chunk information."
+							}
+						},
+						{
+							"name": "4. Send Heartbeat with Chunk Progress",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Chunk progress tracked\", function () {",
+											"    pm.response.to.have.status(200);",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"lastChunk\": \"0003.mp4\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{workflow_session_id}}",
+										"heartbeat"
+									]
+								},
+								"description": "Step 4: Send heartbeat showing chunk progression (simulating recording progress)."
+							}
+						},
+						{
+							"name": "5. Check Session Status",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Session data retrieved\", function () {",
+											"    pm.response.to.have.status(200);",
+											"    var jsonData = pm.response.json();",
+											"    pm.expect(jsonData).to.have.property('lastChunk');",
+											"    pm.expect(jsonData.lastChunk).to.eql('0003.mp4');",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{workflow_session_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{workflow_session_id}}"
+									]
+								},
+								"description": "Step 5: Verify session data and chunk progression."
+							}
+						},
+						{
+							"name": "6. Deregister Session",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Session removed successfully\", function () {",
+											"    pm.response.to.have.status(200);",
+											"});",
+											"",
+											"// Clean up collection variable",
+											"pm.collectionVariables.unset('workflow_session_id');"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{workflow_session_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{workflow_session_id}}"
+									]
+								},
+								"description": "Step 6: Remove session when recording completes (fast cleanup)."
+							}
+						}
+					],
+					"description": "Complete workflow demonstrating the full recording session lifecycle:\n1. Register session\n2. Send heartbeats\n3. Track chunk progression\n4. Monitor session\n5. Clean deregistration\n\nRun this folder in sequence to see the complete flow."
+				},
+				{
+					"name": "Chunk Tracking Simulation",
+					"item": [
+						{
+							"name": "Create Test Session",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"if (pm.response.code === 201) {",
+											"    var jsonData = pm.response.json();",
+											"    pm.collectionVariables.set('chunk_session_id', jsonData.sessionId);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"sessionId\": \"chunk-demo-{{$randomUUID}}\",\n  \"clientId\": \"chunk-tracker\",\n  \"clientHost\": \"localhost\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions"
+									]
+								}
+							}
+						},
+						{
+							"name": "Chunk 0001.mp4",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"lastChunk\": \"0001.mp4\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{chunk_session_id}}/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{chunk_session_id}}",
+										"heartbeat"
+									]
+								}
+							}
+						},
+						{
+							"name": "Chunk 0002.mp4",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"lastChunk\": \"0002.mp4\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{chunk_session_id}}/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{chunk_session_id}}",
+										"heartbeat"
+									]
+								}
+							}
+						},
+						{
+							"name": "Chunk 0003.mp4",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"lastChunk\": \"0003.mp4\"\n}"
+								},
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{chunk_session_id}}/heartbeat",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{chunk_session_id}}",
+										"heartbeat"
+									]
+								}
+							}
+						},
+						{
+							"name": "Verify Chunk Progress",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Final chunk tracked correctly\", function () {",
+											"    pm.response.to.have.status(200);",
+											"    var jsonData = pm.response.json();",
+											"    pm.expect(jsonData.lastChunk).to.eql('0003.mp4');",
+											"});"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{chunk_session_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{chunk_session_id}}"
+									]
+								}
+							}
+						},
+						{
+							"name": "Cleanup Test Session",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.collectionVariables.unset('chunk_session_id');"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "DELETE",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/sessions/{{chunk_session_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"sessions",
+										"{{chunk_session_id}}"
+									]
+								}
+							}
+						}
+					],
+					"description": "Simulates chunk progression during a recording session. Shows how chunk information is tracked and can be used for monitoring recording progress."
+				}
+			]
+		},
+		{
+			"name": "Error Scenarios",
+			"description": "Common error scenarios and edge cases",
+			"item": [
+				{
+					"name": "Duplicate Session Creation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"First creation succeeds\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sessionId\": \"duplicate-test\",\n  \"clientId\": \"test-client\",\n  \"clientHost\": \"localhost\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Create a session that will be used to test duplicate creation error."
+					}
+				},
+				{
+					"name": "Try Duplicate Creation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Duplicate creation fails\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Error message mentions already exists\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.error).to.include('already exists');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sessionId\": \"duplicate-test\",\n  \"clientId\": \"test-client\",\n  \"clientHost\": \"localhost\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Attempt to create the same session again - should fail with 400 error."
+					}
+				},
+				{
+					"name": "Cleanup Duplicate Test",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/duplicate-test",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"duplicate-test"
+							]
+						},
+						"description": "Clean up the test session."
+					}
+				},
+				{
+					"name": "Heartbeat Non-existent Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Returns 404 for non-existent session\", function () {",
+									"    pm.response.to.have.status(404);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/non-existent-session/heartbeat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"non-existent-session",
+								"heartbeat"
+							]
+						},
+						"description": "Try to send heartbeat to a session that doesn't exist."
+					}
+				},
+				{
+					"name": "Invalid Session Data",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Validation error returned\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sessionId\": \"\",\n  \"clientId\": \"\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Try to create session with invalid/empty data."
+					}
+				},
+				{
+					"name": "Unauthorized Access",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Returns 401 for invalid credentials\", function () {",
+									"    pm.response.to.have.status(401);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "username",
+									"value": "wrong",
+									"type": "string"
+								},
+								{
+									"key": "password",
+									"value": "wrong",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Try to access API with wrong credentials."
+					}
+				}
+			]
+		},
+		{
+			"name": "Performance & Load Testing",
+			"description": "Performance testing and load simulation",
+			"item": [
+				{
+					"name": "Bulk Session Creation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Session created\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"// Store session ID for cleanup",
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    var sessions = pm.collectionVariables.get('bulk_sessions') || [];",
+									"    sessions.push(jsonData.sessionId);",
+									"    pm.collectionVariables.set('bulk_sessions', sessions);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"sessionId\": \"bulk-{{$randomUUID}}\",\n  \"clientId\": \"load-test-{{$randomInt}}\",\n  \"clientHost\": \"192.168.1.{{$randomInt}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions"
+							]
+						},
+						"description": "Create multiple sessions for load testing. Run this multiple times to create many sessions."
+					}
+				},
+				{
+					"name": "Rapid Heartbeat Test",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"lastChunk\": \"{{$randomInt}}.mp4\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/sessions/{{session_id}}/heartbeat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"{{session_id}}",
+								"heartbeat"
+							]
+						},
+						"description": "Send rapid heartbeats to test performance. Use with test runners for load testing."
+					}
+				},
+				{
+					"name": "Cleanup All Test Sessions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.unset('bulk_sessions');"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/sessions/cleanup",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"sessions",
+								"cleanup"
+							]
+						},
+						"description": "Clean up all inactive sessions created during testing."
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-set base_url if not defined",
+					"if (!pm.collectionVariables.get('base_url')) {",
+					"    pm.collectionVariables.set('base_url', 'http://localhost:8080');",
+					"}",
+					"",
+					"// Auto-set credentials if not defined",
+					"if (!pm.collectionVariables.get('username')) {",
+					"    pm.collectionVariables.set('username', 'recorder');",
+					"}",
+					"if (!pm.collectionVariables.get('password')) {",
+					"    pm.collectionVariables.set('password', 'rec0rd3r_2024!');",
+					"}",
+					"",
+					"// Auto-set session_id if not defined",
+					"if (!pm.collectionVariables.get('session_id')) {",
+					"    pm.collectionVariables.set('session_id', 'test-session-001');",
+					"}"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global test to check response time",
+					"pm.test('Response time is reasonable', function () {",
+					"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+					"});",
+					"",
+					"// Global test for proper JSON responses (when applicable)",
+					"if (pm.response.headers.get('Content-Type') && pm.response.headers.get('Content-Type').includes('application/json')) {",
+					"    pm.test('Response is valid JSON', function () {",
+					"        pm.response.to.be.json;",
+					"    });",
+					"}"
+				]
+			}
+		}
+	]
+}

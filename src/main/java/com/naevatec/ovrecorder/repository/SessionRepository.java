@@ -4,8 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.naevatec.ovrecorder.model.RecordingSession;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -16,19 +16,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Repository
+@RequiredArgsConstructor
+@Slf4j
 public class SessionRepository {
 
-  private static final Logger logger = LoggerFactory.getLogger(SessionRepository.class);
   private static final String SESSION_KEY_PREFIX = "session:";
   private static final String ACTIVE_SESSIONS_SET = "active_sessions";
 
   private final RedisTemplate<String, String> redisTemplate;
-  private final ObjectMapper objectMapper;
+  private final ObjectMapper objectMapper = createObjectMapper();
 
-  public SessionRepository(RedisTemplate<String, String> redisTemplate) {
-    this.redisTemplate = redisTemplate;
-    this.objectMapper = new ObjectMapper();
-    this.objectMapper.registerModule(new JavaTimeModule());
+  private static ObjectMapper createObjectMapper() {
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.registerModule(new JavaTimeModule());
+    return mapper;
   }
 
   /**
@@ -48,10 +49,10 @@ public class SessionRepository {
       // Set expiration time (e.g., 24 hours)
       redisTemplate.expire(sessionKey, 24, TimeUnit.HOURS);
 
-      logger.debug("Saved session: {}", session.getSessionId());
+      log.debug("Saved session: {}", session.getSessionId());
 
     } catch (JsonProcessingException e) {
-      logger.error("Error saving session {}: {}", session.getSessionId(), e.getMessage());
+      log.error("Error saving session {}: {}", session.getSessionId(), e.getMessage());
       throw new RuntimeException("Failed to save session", e);
     }
   }
@@ -65,16 +66,16 @@ public class SessionRepository {
       String sessionJson = redisTemplate.opsForValue().get(sessionKey);
 
       if (sessionJson == null) {
-        logger.debug("Session not found: {}", sessionId);
+        log.debug("Session not found: {}", sessionId);
         return Optional.empty();
       }
 
       RecordingSession session = objectMapper.readValue(sessionJson, RecordingSession.class);
-      logger.debug("Retrieved session: {}", sessionId);
+      log.debug("Retrieved session: {}", sessionId);
       return Optional.of(session);
 
     } catch (JsonProcessingException e) {
-      logger.error("Error retrieving session {}: {}", sessionId, e.getMessage());
+      log.error("Error retrieving session {}: {}", sessionId, e.getMessage());
       return Optional.empty();
     }
   }
@@ -84,7 +85,7 @@ public class SessionRepository {
    */
   public Set<String> findAllActiveSessionIds() {
     Set<String> sessionIds = redisTemplate.opsForSet().members(ACTIVE_SESSIONS_SET);
-    logger.debug("Found {} active session IDs", sessionIds != null ? sessionIds.size() : 0);
+    log.debug("Found {} active session IDs", sessionIds != null ? sessionIds.size() : 0);
     return sessionIds != null ? sessionIds : Set.of();
   }
 
@@ -107,7 +108,7 @@ public class SessionRepository {
   public boolean exists(String sessionId) {
     String sessionKey = SESSION_KEY_PREFIX + sessionId;
     Boolean exists = redisTemplate.hasKey(sessionKey);
-    return exists != null && exists;
+    return exists;
   }
 
   /**
@@ -115,7 +116,7 @@ public class SessionRepository {
    */
   public void update(RecordingSession session) {
     if (!exists(session.getSessionId())) {
-      logger.warn("Attempting to update non-existent session: {}", session.getSessionId());
+      log.warn("Attempting to update non-existent session: {}", session.getSessionId());
       return;
     }
     save(session); // Save will overwrite existing data
@@ -133,7 +134,7 @@ public class SessionRepository {
     // Remove from active sessions set
     redisTemplate.opsForSet().remove(ACTIVE_SESSIONS_SET, sessionId);
 
-    logger.debug("Deleted session: {}", sessionId);
+    log.debug("Deleted session: {}", sessionId);
   }
 
   /**
@@ -156,7 +157,7 @@ public class SessionRepository {
     String[] sessionIdArray = sessionIds.toArray(new String[0]);
     redisTemplate.opsForSet().remove(ACTIVE_SESSIONS_SET, (Object[]) sessionIdArray);
 
-    logger.debug("Deleted {} sessions", sessionIds.size());
+    log.debug("Deleted {} sessions", sessionIds.size());
   }
 
   /**
@@ -174,12 +175,12 @@ public class SessionRepository {
     Set<String> sessionIds = findAllActiveSessionIds();
     List<String> orphanedIds = sessionIds.stream()
         .filter(id -> !exists(id))
-        .collect(Collectors.toList());
+        .toList();
 
     if (!orphanedIds.isEmpty()) {
       String[] orphanedArray = orphanedIds.toArray(new String[0]);
       redisTemplate.opsForSet().remove(ACTIVE_SESSIONS_SET, (Object[]) orphanedArray);
-      logger.info("Cleaned up {} orphaned session IDs", orphanedIds.size());
+      log.info("Cleaned up {} orphaned session IDs", orphanedIds.size());
     }
   }
 }
