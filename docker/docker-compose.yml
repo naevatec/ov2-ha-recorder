@@ -79,13 +79,15 @@ services:
       - APP_SECURITY_USERNAME=${HA_RECORDER_USERNAME:-recorder}
       - APP_SECURITY_PASSWORD=${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}
       # Session management
-      - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30s}
-      - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-600s}
+      - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30000}
+      - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-600}
       # MinIO integration (for future use - but no dependency needed)
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
       - MINIO_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
       - MINIO_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
+      # Application profile
+      - SPRING_PROFILES_ACTIVE=dev
     depends_on:
       - redis
       # Removed minio-mc dependency - HA Controller doesn't need MinIO to be ready

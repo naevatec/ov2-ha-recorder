@@ -75,6 +75,8 @@ COPY utils/chunk-downloader.sh /usr/local/bin/
 COPY utils/chunk-cleaner.sh /usr/local/bin/
 COPY utils/log-uploader.sh /usr/local/bin/
 COPY utils/logging.sh /usr/local/bin/
+COPY utils/session-register.sh /usr/local/bin/
+COPY utils/recorder-session-manager.sh /usr/local/bin/
 
 # Prepare scripts and folders
 RUN chmod +x /entrypoint.sh /composed.sh /headless-chrome.sh \
@@ -84,6 +86,8 @@ RUN chmod +x /entrypoint.sh /composed.sh /headless-chrome.sh \
   && chmod +x /usr/local/bin/chunk-cleaner.sh \
   && chmod +x /usr/local/bin/log-uploader.sh \
   && chmod +x /usr/local/bin/logging.sh \
+  && chmod +x /usr/local/bin/session-register.sh \
+  && chmod +x /usr/local/bin/recorder-session-manager.sh \
   && mkdir -p /recordings \
   && chmod 777 /recordings
 

@@ -59,13 +59,13 @@ fi
   log_info "🎹 Resolution: $RESOLUTION, Framerate: $FRAMERATE"
   log_info "📂 Chunk recording type: $CHUNK_RECORDING_TYPE"
   log_info "📁 Chunk directory: $CHUNK_RECORDING_DIR"
-  log_info "⏱️  Chunk duration: ${CHUNK_TIME_SIZE}s"
+  log_info "⏱️ Chunk duration: ${CHUNK_TIME_SIZE}s"
 
   ### Chunk Upload Integration ###
   
   # Start chunk uploader if recording to S3
   if [[ "$CHUNK_RECORDING_TYPE" == "s3" ]]; then
-    log_info "☁️  Starting chunk uploader for S3 storage..."
+    log_info "☁️ Starting chunk uploader for S3 storage..."
     log_info "🪣 S3 Bucket: ${HA_AWS_S3_BUCKET:-ov-recordings}"
     log_info "🔗 S3 Endpoint: ${HA_AWS_S3_SERVICE_ENDPOINT:-default AWS}"
     
@@ -117,6 +117,38 @@ EOF
     log_info "📄 Default recording metadata created"
   fi
 
+  ### HA Controller Session Registration ###
+  log_info "🔗 Registering session with HA Controller..."
+
+  register_session_with_ha() {
+    local recording_file="/recordings/$VIDEO_ID/.recording.$VIDEO_ID"
+    
+    if [[ -f "$recording_file" ]]; then
+      log_info "📤 Sending session registration to HA Controller..."
+      
+      (
+        timeout 30 /usr/local/bin/session-register.sh "$recording_file" 2>&1 | while read line; do
+          log_info "[HA-REG] $line"
+        done
+        
+        if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+          log_success "✅ Session registered with HA Controller successfully"
+          
+          /usr/local/bin/recorder-session-manager.sh "$recording_file" "$CHUNK_RECORDING_DIR" &
+          HA_MANAGER_PID=$!
+          echo $HA_MANAGER_PID > "/tmp/ha-manager-${VIDEO_ID}.pid"
+          log_success "💓 HA Manager started (PID: $HA_MANAGER_PID)"
+        else
+          log_warn "⚠️ Failed to register session with HA Controller (non-critical)"
+        fi
+      ) &
+      
+      log_info "🔗 Session registration initiated in background"
+    fi
+  }
+
+  register_session_with_ha
+
   ### Run headless Chrome ###
 
   source /headless-chrome.sh
@@ -135,7 +167,7 @@ EOF
 
   # Create a non empty file to avoid OpenVidu to stop the recording
   echo "Recording by chunks" > /recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT
-  log_info "📝 Placeholder video file created"
+  log_info "📁 Placeholder video file created"
 
   ### Start recording with ffmpeg ###
 
@@ -362,7 +394,7 @@ EOF
 
   ### Update Recording json data ###
 
-  log_info "📝 Updating recording metadata..."
+  log_info "📁 Updating recording metadata..."
   TMP=$(mktemp /recordings/$VIDEO_ID/.$VIDEO_ID.XXXXXXXXXXXXXXXXXXXXXXX.json)
   
   # Check if analysis file exists and is valid JSON
@@ -409,9 +441,33 @@ EOF
   
   log_info "📊 Recording stats: Duration=${DURATION}s, Size=${SIZE} bytes, Audio=$HAS_AUDIO, Video=$HAS_VIDEO"
 
+  ### HA Controller - Quick Session Unregistration (Background) ###
+  log_info "🧹 Unregistering session from HA Controller..."
+
+  quick_unregister_session() {
+    local recording_file="/recordings/$VIDEO_ID/.recording.$VIDEO_ID"
+    
+    if [[ -f "$recording_file" ]]; then
+      local unique_session_id
+      unique_session_id=$(jq -r '.uniqueSessionId // .sessionId // .id' "$recording_file" 2>/dev/null || echo "$VIDEO_ID")
+      
+      if [[ -n "$unique_session_id" ]]; then
+        # Quick session removal - no status updates, just delete
+        timeout 10 curl -s \
+          -u "${APP_SECURITY_USERNAME:-recorder}:${APP_SECURITY_PASSWORD:-rec0rd3r_2024!}" \
+          -X DELETE \
+          "http://${CONTROLLER_HOST:-ov-recorder}:${CONTROLLER_PORT:-8080}/api/sessions/${unique_session_id}" \
+          >/dev/null 2>&1 && log_info "[HA-CLEANUP] Session unregistered successfully" || log_warn "[HA-CLEANUP] Session unregistration failed (non-critical)"
+      fi
+    fi
+  }
+
+  # Start quick unregistration in background immediately
+  quick_unregister_session &
+
   ### Generate video thumbnail ###
 
-  log_info "🖼️  Generating video thumbnail..."
+  log_info "🖼️ Generating video thumbnail..."
   if [[ -f "/recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT" ]]; then
     MIDDLE_TIME=$(ffmpeg -i /recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT 2>&1 | grep Duration | awk '{print $2}' | tr -d , | awk -F ':' '{print ($3+$2*60+$1*3600)/2}' || echo "1")
     THUMBNAIL_HEIGHT=$((480 * $HEIGHT / $WIDTH))
@@ -428,7 +484,7 @@ EOF
   ### Change permissions to all generated files ###
 
   sudo chmod -R 777 /recordings/$VIDEO_ID
-  log_info "📁 File permissions updated"
+  log_info "🔒 File permissions updated"
 
   ### Upload logs to S3 (if S3 storage is enabled) ###
   
@@ -488,7 +544,6 @@ EOF
     log_info "💾 Local storage mode - no S3 cleanup needed"
   fi
 
-
   ### Clean up temporary analysis file ###
   
   if [[ "${DEBUG_MODE:-false}" == "true" ]]; then
@@ -507,10 +562,34 @@ EOF
     fi
   fi
 
+  ### HA Controller - Cleanup Background Processes ###
+  log_info "🧹 Cleaning up HA Controller background processes..."
+
+  cleanup_ha_processes() {
+    # Quick cleanup - kill processes immediately without waiting
+    if [[ -f "/tmp/ha-manager-${VIDEO_ID}.pid" ]]; then
+      HA_MANAGER_PID=$(cat "/tmp/ha-manager-${VIDEO_ID}.pid")
+      if kill -0 "$HA_MANAGER_PID" 2>/dev/null; then
+        log_info "🛑 Killing HA Manager (PID: $HA_MANAGER_PID)"
+        kill -KILL "$HA_MANAGER_PID" 2>/dev/null || true
+      fi
+      rm -f "/tmp/ha-manager-${VIDEO_ID}.pid"
+    fi
+    
+    # Kill any remaining HA processes quickly
+    pkill -KILL -f "recorder-session-manager.sh.*$VIDEO_ID" 2>/dev/null || true
+    pkill -KILL -f "session-register.sh.*$VIDEO_ID" 2>/dev/null || true
+    
+    log_success "🧹 HA Controller cleanup completed"
+  }
+
+  # Do HA cleanup in background while other tasks continue
+  cleanup_ha_processes &
+
   ### Change permissions to all generated files ###
 
   sudo chmod -R 777 /recordings/$VIDEO_ID
-  log_info "📁 File permissions updated"
+  log_info "🔒 File permissions updated"
 
   log_success "🎉 Recording process completed for VIDEO_ID: $VIDEO_ID"
 

@@ -85,8 +85,8 @@ MINIO_CONSOLE_PORT=9001              # MinIO console port
 HA_RECORDER_USERNAME=recorder        # HA Controller API username
 HA_RECORDER_PASSWORD=rec0rd3r_2024!  # HA Controller API password
 HA_RECORDER_PORT=8080               # HA Controller external port
-HA_SESSION_CLEANUP_INTERVAL=30s     # Session cleanup frequency
-HA_SESSION_MAX_INACTIVE_TIME=600s   # Max time before session cleanup
+HA_SESSION_CLEANUP_INTERVAL=30000   # Session review frecuency in milliseconds
+HA_SESSION_MAX_INACTIVE_TIME=600    # Max time before session cleanup
 
 # Docker Configuration
 TAG=2.31.0                          # OpenVidu image tag

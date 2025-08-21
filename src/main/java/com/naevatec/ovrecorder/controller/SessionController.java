@@ -26,7 +26,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/sessions")
-@Tag(name = "Recording Sessions", description = "API for managing video recording sessions in HA environment")
+@Tag(name = "Recording Sessions", description = "Simplified API for managing recording sessions in HA environment")
 @SecurityRequirement(name = "basicAuth")
 public class SessionController {
 
@@ -38,10 +38,13 @@ public class SessionController {
     this.sessionService = sessionService;
   }
 
+  /**
+   * Create a new recording session
+   * POST /api/sessions
+   */
   @Operation(
       summary = "Create a new recording session",
-      description = "Creates a new recording session with the provided session ID, client ID, and optional client host. " +
-                   "If client host is not provided, it will be extracted from the request headers."
+      description = "Creates a new recording session with the provided session ID, client ID, and optional client host."
   )
   @ApiResponses(value = {
       @ApiResponse(responseCode = "201", description = "Session created successfully",
@@ -52,26 +55,7 @@ public class SessionController {
           content = @Content(schema = @Schema(implementation = Map.class)))
   })
   @PostMapping
-  public ResponseEntity<?> createSession(
-      @io.swagger.v3.oas.annotations.parameters.RequestBody(
-          description = "Session creation request data",
-          required = true,
-          content = @Content(
-              schema = @Schema(implementation = CreateSessionRequest.class),
-              examples = @ExampleObject(
-                  name = "Example Session Creation",
-                  value = """
-                  {
-                    "sessionId": "112_-_eiglesia_emer_minusculas_-_27541_-_2_-_e7f0bc2500695967644cc47135eb105f",
-                    "clientId": "client-01",
-                    "clientHost": "192.168.1.100",
-                    "metadata": "Optional metadata for the session"
-                  }
-                  """
-              )
-          )
-      )
-      @Valid @RequestBody CreateSessionRequest request,
+  public ResponseEntity<?> createSession(@Valid @RequestBody CreateSessionRequest request,
       HttpServletRequest httpRequest) {
     try {
       String clientHost = request.getClientHost() != null ? request.getClientHost() : getClientIpAddress(httpRequest);
@@ -94,6 +78,10 @@ public class SessionController {
     }
   }
 
+  /**
+   * Get session by ID
+   * GET /api/sessions/{sessionId}
+   */
   @Operation(
       summary = "Get session by ID",
       description = "Retrieves a specific recording session by its session ID"
@@ -116,25 +104,16 @@ public class SessionController {
     }
   }
 
+  /**
+   * Get all active sessions
+   * GET /api/sessions
+   */
   @Operation(
       summary = "Get all active sessions",
       description = "Retrieves a list of all currently active recording sessions with their count and timestamp"
   )
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Sessions retrieved successfully",
-          content = @Content(
-              schema = @Schema(implementation = Map.class),
-              examples = @ExampleObject(
-                  name = "Sessions Response",
-                  value = """
-                  {
-                    "sessions": [...],
-                    "count": 3,
-                    "timestamp": "2024-01-20T10:30:00"
-                  }
-                  """
-              )
-          ))
+      @ApiResponse(responseCode = "200", description = "Sessions retrieved successfully")
   })
   @GetMapping
   public ResponseEntity<Map<String, Object>> getAllSessions() {
@@ -149,10 +128,13 @@ public class SessionController {
     return ResponseEntity.ok(response);
   }
 
+  /**
+   * Update session heartbeat with optional chunk information
+   * PUT /api/sessions/{sessionId}/heartbeat
+   */
   @Operation(
       summary = "Update session heartbeat",
-      description = "Updates the heartbeat timestamp for a session to indicate it's still active. " +
-                   "This is used for session health monitoring and automatic cleanup."
+      description = "Updates the heartbeat timestamp for a session with optional chunk information for monitoring."
   )
   @ApiResponses(value = {
       @ApiResponse(responseCode = "200", description = "Heartbeat updated successfully"),
@@ -161,130 +143,52 @@ public class SessionController {
   @PutMapping("/{sessionId}/heartbeat")
   public ResponseEntity<?> updateHeartbeat(
       @Parameter(description = "Unique identifier of the recording session", example = "rec-001")
-      @PathVariable String sessionId) {
-    boolean updated = sessionService.updateHeartbeat(sessionId);
-
-    if (updated) {
-      return ResponseEntity.ok(Map.of(
-          "message", "Heartbeat updated",
-          "sessionId", sessionId,
-          "timestamp", java.time.LocalDateTime.now()));
-    } else {
-      return ResponseEntity.notFound().build();
-    }
-  }
-
-  @Operation(
-      summary = "Update session status",
-      description = "Updates the status of a recording session (STARTING, RECORDING, PAUSED, STOPPING, COMPLETED, FAILED, INACTIVE)"
-  )
-  @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Status updated successfully"),
-      @ApiResponse(responseCode = "400", description = "Invalid status value"),
-      @ApiResponse(responseCode = "404", description = "Session not found")
-  })
-  @PutMapping("/{sessionId}/status")
-  public ResponseEntity<?> updateStatus(
-      @Parameter(description = "Unique identifier of the recording session", example = "rec-001")
       @PathVariable String sessionId,
       @io.swagger.v3.oas.annotations.parameters.RequestBody(
-          description = "Status update request",
+          description = "Heartbeat update request with optional chunk information",
           content = @Content(
-              schema = @Schema(implementation = UpdateStatusRequest.class),
+              schema = @Schema(implementation = HeartbeatRequest.class),
               examples = @ExampleObject(
                   value = """
                   {
-                    "status": "RECORDING"
+                    "lastChunk": "0001.mp4"
                   }
                   """
               )
           )
       )
-      @RequestBody UpdateStatusRequest request) {
-    try {
-      boolean updated = sessionService.updateSessionStatus(sessionId, request.getStatus());
+      @RequestBody(required = false) HeartbeatRequest request) {
 
-      if (updated) {
-        return ResponseEntity.ok(Map.of(
-            "message", "Status updated",
-            "sessionId", sessionId,
-            "status", request.getStatus(),
-            "timestamp", java.time.LocalDateTime.now()));
-      } else {
-        return ResponseEntity.notFound().build();
+    String lastChunk = null;
+    if (request != null && request.getLastChunk() != null) {
+      lastChunk = request.getLastChunk();
+    }
+
+    boolean updated = sessionService.updateHeartbeat(sessionId, lastChunk);
+
+    if (updated) {
+      Map<String, Object> response = new HashMap<>();
+      response.put("message", "Heartbeat updated");
+      response.put("sessionId", sessionId);
+      response.put("timestamp", java.time.LocalDateTime.now());
+
+      if (lastChunk != null) {
+        response.put("lastChunk", lastChunk);
       }
-    } catch (Exception e) {
-      logger.error("Error updating session status: {}", e.getMessage(), e);
-      return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-    }
-  }
 
-  @Operation(
-      summary = "Update recording path",
-      description = "Updates the file path where the recording is being stored"
-  )
-  @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Recording path updated successfully"),
-      @ApiResponse(responseCode = "404", description = "Session not found")
-  })
-  @PutMapping("/{sessionId}/path")
-  public ResponseEntity<?> updateRecordingPath(
-      @Parameter(description = "Unique identifier of the recording session", example = "rec-001")
-      @PathVariable String sessionId,
-      @io.swagger.v3.oas.annotations.parameters.RequestBody(
-          description = "Recording path update request",
-          content = @Content(
-              schema = @Schema(implementation = UpdatePathRequest.class),
-              examples = @ExampleObject(
-                  value = """
-                  {
-                    "recordingPath": "/minio/recordings/rec-001.mp4"
-                  }
-                  """
-              )
-          )
-      )
-      @RequestBody UpdatePathRequest request) {
-    boolean updated = sessionService.updateRecordingPath(sessionId, request.getRecordingPath());
-
-    if (updated) {
-      return ResponseEntity.ok(Map.of(
-          "message", "Recording path updated",
-          "sessionId", sessionId,
-          "recordingPath", request.getRecordingPath(),
-          "timestamp", java.time.LocalDateTime.now()));
+      return ResponseEntity.ok(response);
     } else {
       return ResponseEntity.notFound().build();
     }
   }
 
-  @Operation(
-      summary = "Stop a recording session",
-      description = "Stops an active recording session by changing its status to STOPPING and then COMPLETED"
-  )
-  @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Session stopped successfully"),
-      @ApiResponse(responseCode = "404", description = "Session not found")
-  })
-  @PutMapping("/{sessionId}/stop")
-  public ResponseEntity<?> stopSession(
-      @Parameter(description = "Unique identifier of the recording session", example = "rec-001")
-      @PathVariable String sessionId) {
-    boolean stopped = sessionService.stopSession(sessionId);
-
-    if (stopped) {
-      return ResponseEntity.ok(Map.of(
-          "message", "Session stopped",
-          "sessionId", sessionId,
-          "timestamp", java.time.LocalDateTime.now()));
-    } else {
-      return ResponseEntity.notFound().build();
-    }
-  }
-
+  /**
+   * Remove a session completely (deregistration)
+   * DELETE /api/sessions/{sessionId}
+   */
   @Operation(
       summary = "Remove a session completely",
-      description = "Permanently removes a recording session from Redis. Use with caution!"
+      description = "Permanently removes a recording session from the HA Controller (deregistration)."
   )
   @ApiResponses(value = {
       @ApiResponse(responseCode = "200", description = "Session removed successfully"),
@@ -306,9 +210,13 @@ public class SessionController {
     }
   }
 
+  /**
+   * Check if session is active
+   * GET /api/sessions/{sessionId}/active
+   */
   @Operation(
       summary = "Check if session is active",
-      description = "Checks whether a specific session is currently active (RECORDING or STARTING status)"
+      description = "Checks whether a specific session is currently active"
   )
   @ApiResponses(value = {
       @ApiResponse(responseCode = "200", description = "Session status checked successfully")
@@ -325,6 +233,10 @@ public class SessionController {
         "timestamp", java.time.LocalDateTime.now()));
   }
 
+  /**
+   * Manual cleanup of inactive sessions
+   * POST /api/sessions/cleanup
+   */
   @Operation(
       summary = "Manual cleanup of inactive sessions",
       description = "Manually triggers cleanup of sessions that haven't sent heartbeats within the configured timeout period"
@@ -342,6 +254,10 @@ public class SessionController {
         "timestamp", java.time.LocalDateTime.now()));
   }
 
+  /**
+   * Health check endpoint
+   * GET /api/sessions/health
+   */
   @Operation(
       summary = "Health check endpoint",
       description = "Returns the health status of the session controller and count of active sessions"
@@ -375,7 +291,7 @@ public class SessionController {
     return request.getRemoteAddr();
   }
 
-  // Request DTOs with Swagger documentation
+  // Request DTOs
   @Schema(description = "Request object for creating a new recording session")
   public static class CreateSessionRequest {
     @Schema(description = "Unique identifier for the recording session",
@@ -407,24 +323,13 @@ public class SessionController {
     public void setMetadata(String metadata) { this.metadata = metadata; }
   }
 
-  @Schema(description = "Request object for updating session status")
-  public static class UpdateStatusRequest {
-    @Schema(description = "New status for the session",
-            example = "RECORDING",
-            allowableValues = {"STARTING", "RECORDING", "PAUSED", "STOPPING", "COMPLETED", "FAILED", "INACTIVE"})
-    private RecordingSession.SessionStatus status;
+  @Schema(description = "Request object for heartbeat updates")
+  public static class HeartbeatRequest {
+    @Schema(description = "Name of the last chunk file created",
+            example = "0001.mp4")
+    private String lastChunk;
 
-    public RecordingSession.SessionStatus getStatus() { return status; }
-    public void setStatus(RecordingSession.SessionStatus status) { this.status = status; }
-  }
-
-  @Schema(description = "Request object for updating recording file path")
-  public static class UpdatePathRequest {
-    @Schema(description = "File path where the recording is stored",
-            example = "/minio/recordings/rec-001.mp4")
-    private String recordingPath;
-
-    public String getRecordingPath() { return recordingPath; }
-    public void setRecordingPath(String recordingPath) { this.recordingPath = recordingPath; }
+    public String getLastChunk() { return lastChunk; }
+    public void setLastChunk(String lastChunk) { this.lastChunk = lastChunk; }
   }
 }

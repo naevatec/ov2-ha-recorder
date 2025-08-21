@@ -59,9 +59,16 @@ public class SessionService {
   }
 
   /**
-   * Update session heartbeat (keep-alive)
+   * Update session heartbeat (keep-alive) without chunk info
    */
   public boolean updateHeartbeat(String sessionId) {
+    return updateHeartbeat(sessionId, null);
+  }
+
+  /**
+   * Update session heartbeat (keep-alive) with optional chunk info
+   */
+  public boolean updateHeartbeat(String sessionId, String lastChunk) {
     Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
 
     if (sessionOpt.isEmpty()) {
@@ -70,10 +77,16 @@ public class SessionService {
     }
 
     RecordingSession session = sessionOpt.get();
-    session.updateHeartbeat();
-    sessionRepository.update(session);
 
-    logger.debug("Updated heartbeat for session: {}", sessionId);
+    if (lastChunk != null && !lastChunk.isEmpty()) {
+      session.updateHeartbeat(lastChunk);
+      logger.debug("Updated heartbeat for session: {} with chunk: {}", sessionId, lastChunk);
+    } else {
+      session.updateHeartbeat();
+      logger.debug("Updated heartbeat for session: {}", sessionId);
+    }
+
+    sessionRepository.update(session);
     return true;
   }
 

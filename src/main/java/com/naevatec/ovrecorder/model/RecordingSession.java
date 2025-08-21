@@ -40,6 +40,9 @@ public class RecordingSession {
   @JsonProperty("metadata")
   private String metadata;
 
+  @JsonProperty("lastChunk")
+  private String lastChunk;
+
   // Constructors
   public RecordingSession() {
     this.createdAt = LocalDateTime.now();
@@ -119,9 +122,22 @@ public class RecordingSession {
     this.metadata = metadata;
   }
 
+  public String getLastChunk() {
+    return lastChunk;
+  }
+
+  public void setLastChunk(String lastChunk) {
+    this.lastChunk = lastChunk;
+  }
+
   // Utility methods
   public void updateHeartbeat() {
     this.lastHeartbeat = LocalDateTime.now();
+  }
+
+  public void updateHeartbeat(String lastChunk) {
+    this.lastHeartbeat = LocalDateTime.now();
+    this.lastChunk = lastChunk;
   }
 
   public boolean isActive() {
@@ -160,6 +176,7 @@ public class RecordingSession {
         ", createdAt=" + createdAt +
         ", lastHeartbeat=" + lastHeartbeat +
         ", recordingPath='" + recordingPath + '\'' +
+        ", lastChunk='" + lastChunk + '\'' +
         '}';
   }
 
