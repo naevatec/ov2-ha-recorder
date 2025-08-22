@@ -126,12 +126,65 @@ public class SessionController {
             Map<String, Object> response = Map.of(
                 "sessions", sessions,
                 "count", sessions.size(),
-                "timestamp", LocalDateTime.now().toString()
+                "timestamp", LocalDateTime.now().toString(),
+                "type", "active"
             );
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("Error retrieving sessions", e);
+            log.error("Error retrieving active sessions", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Get all sessions (both active and inactive)
+     */
+    @GetMapping("/all")
+    public ResponseEntity<Map<String, Object>> getAllSessionsIncludingInactive() {
+        try {
+            List<RecordingSession> allSessions = sessionService.getAllSessions();
+
+            // Separate into active and inactive for statistics
+            long activeCount = allSessions.stream()
+                .filter(RecordingSession::isActive)
+                .count();
+            long inactiveCount = allSessions.size() - activeCount;
+
+            Map<String, Object> response = Map.of(
+                "sessions", allSessions,
+                "totalCount", allSessions.size(),
+                "activeCount", activeCount,
+                "inactiveCount", inactiveCount,
+                "timestamp", LocalDateTime.now().toString(),
+                "type", "all"
+            );
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error retrieving all sessions", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Get all inactive sessions
+     */
+    @GetMapping("/inactive")
+    public ResponseEntity<Map<String, Object>> getAllInactiveSessions() {
+        try {
+            List<RecordingSession> inactiveSessions = sessionService.getAllInactiveSessions();
+
+            Map<String, Object> response = Map.of(
+                "sessions", inactiveSessions,
+                "count", inactiveSessions.size(),
+                "timestamp", LocalDateTime.now().toString(),
+                "type", "inactive"
+            );
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error retrieving inactive sessions", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -319,10 +372,14 @@ public class SessionController {
     public ResponseEntity<Map<String, Object>> healthCheck() {
         try {
             long activeSessionCount = sessionService.getActiveSessionCount();
+            long totalSessionCount = sessionService.getTotalSessionCount();
+            long inactiveSessionCount = totalSessionCount - activeSessionCount;
 
             Map<String, Object> response = Map.of(
                 "status", "healthy",
                 "activeSessions", activeSessionCount,
+                "totalSessions", totalSessionCount,
+                "inactiveSessions", inactiveSessionCount,
                 "timestamp", LocalDateTime.now().toString(),
                 "service", "recorder-ha-controller"
             );

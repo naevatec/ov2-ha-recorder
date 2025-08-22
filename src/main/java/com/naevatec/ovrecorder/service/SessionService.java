@@ -90,10 +90,38 @@ public class SessionService {
   }
 
   /**
+   * Get all sessions (both active and inactive)
+   */
+  public List<RecordingSession> getAllSessions() {
+    return sessionRepository.findAll();
+  }
+
+  /**
+   * Get all inactive sessions
+   */
+  public List<RecordingSession> getAllInactiveSessions() {
+    return sessionRepository.findAllInactiveSessions();
+  }
+
+  /**
    * Get count of active sessions
    */
   public long getActiveSessionCount() {
     return sessionRepository.getActiveSessionCount();
+  }
+
+  /**
+   * Get count of total sessions (active and inactive)
+   */
+  public long getTotalSessionCount() {
+    return sessionRepository.getTotalSessionCount();
+  }
+
+  /**
+   * Get count of inactive sessions
+   */
+  public long getInactiveSessionCount() {
+    return sessionRepository.getInactiveSessionCount();
   }
 
   /**
