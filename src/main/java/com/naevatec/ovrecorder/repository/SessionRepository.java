@@ -93,13 +93,92 @@ public class SessionRepository {
    * REVIEW/GET: Get all active sessions
    */
   public List<RecordingSession> findAllActiveSessions() {
-    Set<String> sessionIds = findAllActiveSessionIds();
+//    Set<String> sessionIds = findAllActiveSessionIds();
+//
+//    return sessionIds.stream()
+//        .map(this::findById)
+//        .filter(Optional::isPresent)
+//        .map(Optional::get)
+//        .collect(Collectors.toList());
+	      try {
+      List<RecordingSession> allSessions = findAll();
 
-    return sessionIds.stream()
-        .map(this::findById)
-        .filter(Optional::isPresent)
-        .map(Optional::get)
-        .collect(Collectors.toList());
+      List<RecordingSession> activeSessions = allSessions.stream()
+          .filter(session -> session.isActive())
+          .collect(Collectors.toList());
+
+      log.debug("Found {} active sessions out of {} total sessions", activeSessions.size(), allSessions.size());
+
+      return activeSessions;
+
+    } catch (Exception e) {
+      log.error("Error retrieving inactive sessions: {}", e.getMessage(), e);
+      return List.of();
+    }
+
+  }
+
+  /**
+   * REVIEW/GET: Get all inactive sessions
+   * Returns sessions that are marked as inactive or have inactive status
+   */
+  public List<RecordingSession> findAllInactiveSessions() {
+    try {
+      List<RecordingSession> allSessions = findAll();
+
+      List<RecordingSession> inactiveSessions = allSessions.stream()
+          .filter(session -> !session.isActive())
+          .collect(Collectors.toList());
+
+      log.debug("Found {} inactive sessions out of {} total sessions",
+                inactiveSessions.size(), allSessions.size());
+
+      return inactiveSessions;
+
+    } catch (Exception e) {
+      log.error("Error retrieving inactive sessions: {}", e.getMessage(), e);
+      return List.of();
+    }
+  }
+
+  /**
+   * REVIEW/GET: Get ALL sessions (both active and inactive)
+   * This method finds all session keys in Redis and retrieves them
+   */
+  public List<RecordingSession> findAll() {
+    try {
+      // Find all keys with session prefix using SCAN pattern
+      Set<String> sessionKeys = redisTemplate.keys(SESSION_KEY_PREFIX + "*");
+
+      if (sessionKeys == null || sessionKeys.isEmpty()) {
+        log.debug("No sessions found in Redis");
+        return List.of();
+      }
+
+      // Retrieve all sessions
+      List<RecordingSession> allSessions = sessionKeys.stream()
+          .map(key -> {
+            try {
+              String sessionJson = redisTemplate.opsForValue().get(key);
+              if (sessionJson != null) {
+                return objectMapper.readValue(sessionJson, RecordingSession.class);
+              }
+              return null;
+            } catch (JsonProcessingException e) {
+              log.warn("Failed to parse session from key {}: {}", key, e.getMessage());
+              return null;
+            }
+          })
+          .filter(session -> session != null)
+          .collect(Collectors.toList());
+
+      log.debug("Retrieved {} total sessions from Redis", allSessions.size());
+      return allSessions;
+
+    } catch (Exception e) {
+      log.error("Error retrieving all sessions: {}", e.getMessage(), e);
+      return List.of();
+    }
   }
 
   /**
@@ -108,7 +187,7 @@ public class SessionRepository {
   public boolean exists(String sessionId) {
     String sessionKey = SESSION_KEY_PREFIX + sessionId;
     Boolean exists = redisTemplate.hasKey(sessionKey);
-    return exists;
+    return Boolean.TRUE.equals(exists);
   }
 
   /**
@@ -169,6 +248,31 @@ public class SessionRepository {
   }
 
   /**
+   * Get count of all sessions (including inactive)
+   */
+  public long getTotalSessionCount() {
+    try {
+      Set<String> sessionKeys = redisTemplate.keys(SESSION_KEY_PREFIX + "*");
+      return sessionKeys != null ? sessionKeys.size() : 0;
+    } catch (Exception e) {
+      log.error("Error getting total session count: {}", e.getMessage());
+      return 0;
+    }
+  }
+
+  /**
+   * Get count of inactive sessions
+   */
+  public long getInactiveSessionCount() {
+    try {
+      return findAllInactiveSessions().size();
+    } catch (Exception e) {
+      log.error("Error getting inactive session count: {}", e.getMessage());
+      return 0;
+    }
+  }
+
+  /**
    * Clean up orphaned session IDs (IDs in the set but no actual session data)
    */
   public void cleanupOrphanedSessions() {
@@ -181,6 +285,51 @@ public class SessionRepository {
       String[] orphanedArray = orphanedIds.toArray(new String[0]);
       redisTemplate.opsForSet().remove(ACTIVE_SESSIONS_SET, (Object[]) orphanedArray);
       log.info("Cleaned up {} orphaned session IDs", orphanedIds.size());
+    }
+  }
+
+  /**
+   * Clean up old inactive sessions by their Redis keys
+   * More efficient than loading all sessions when we just want to delete them
+   */
+  public int cleanupOldInactiveSessionsByKeys(long maxAgeHours) {
+    try {
+      Set<String> sessionKeys = redisTemplate.keys(SESSION_KEY_PREFIX + "*");
+      if (sessionKeys == null || sessionKeys.isEmpty()) {
+        return 0;
+      }
+
+      // Get TTL for each key and remove expired ones
+      List<String> keysToDelete = sessionKeys.stream()
+          .filter(key -> {
+            Long ttl = redisTemplate.getExpire(key, TimeUnit.HOURS);
+            return ttl != null && ttl <= (24 - maxAgeHours); // Default TTL is 24h
+          })
+          .collect(Collectors.toList());
+
+      if (!keysToDelete.isEmpty()) {
+        // Delete the keys
+        redisTemplate.delete(keysToDelete);
+
+        // Extract session IDs and remove from active set
+        List<String> sessionIds = keysToDelete.stream()
+            .map(key -> key.substring(SESSION_KEY_PREFIX.length()))
+            .collect(Collectors.toList());
+
+        if (!sessionIds.isEmpty()) {
+          String[] sessionIdArray = sessionIds.toArray(new String[0]);
+          redisTemplate.opsForSet().remove(ACTIVE_SESSIONS_SET, (Object[]) sessionIdArray);
+        }
+
+        log.info("Cleaned up {} old inactive sessions by TTL", keysToDelete.size());
+        return keysToDelete.size();
+      }
+
+      return 0;
+
+    } catch (Exception e) {
+      log.error("Error cleaning up old inactive sessions by keys: {}", e.getMessage(), e);
+      return 0;
     }
   }
 }

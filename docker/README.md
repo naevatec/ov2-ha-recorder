@@ -96,7 +96,7 @@ HA_CONTROLLER_HOST=ov-recorder          # HA Controller hostname (usually servic
 HA_CONTROLLER_PORT=8080                 # HA Controller port
 HA_CONTROLLER_USERNAME=recorder       # HA Controller API username
 HA_CONTROLLER_PASSWORD=rec0rd3r_2024! # HA Controller API password
-HEARTBEAT_INTERVAL=30                # Heartbeat interval in seconds
+HEARTBEAT_INTERVAL=10                # Heartbeat interval in seconds
 RECORDING_BASE_URL=https://devel.naevatec.com:4443/openvidu  # Base URL for recordings
 
 # HA Controller Internal Configuration
@@ -419,7 +419,7 @@ HA_CONTROLLER_USERNAME=recorder
 HA_CONTROLLER_PASSWORD=rec0rd3r_2024!
 
 # Heartbeat Configuration (OPTIONAL - has defaults)
-HEARTBEAT_INTERVAL=30
+HEARTBEAT_INTERVAL=10
 
 # Recording Base URL (OPTIONAL)
 RECORDING_BASE_URL=https://devel.naevatec.com:4443/openvidu

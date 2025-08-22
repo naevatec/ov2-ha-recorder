@@ -36,11 +36,18 @@ public class FailoverService {
     @Value("${app.failover.enabled:true}")
     private boolean failoverEnabled;
 
-    @Value("${app.failover.heartbeat-timeout:300}")
-    private long heartbeatTimeoutSeconds;
+	@Value("${app.session.heartbeat:300}")
+    private long heartbeatTimeSeconds;
 
-    @Value("${app.failover.stuck-chunk-timeout:180}")
-    private long stuckChunkTimeoutSeconds;
+	@Value("${app.failover.heartbeat-max-lost:3}")
+	private long maxLostHeartbeats;
+
+	private final long heartbeatTimeoutSeconds = heartbeatTimeSeconds * maxLostHeartbeats;
+
+    @Value("${app.failover.chunk.time:10}")
+	private long chunkTimeSeconds;
+
+    private final long stuckChunkTimeoutSeconds = chunkTimeSeconds * maxLostHeartbeats; // 3 times chunk duration
 
     @Value("${app.failover.check-interval:60000}")
     private long checkIntervalMs;
@@ -186,9 +193,10 @@ public class FailoverService {
     /**
      * Scheduled task to detect failed sessions
      */
-    @Scheduled(fixedDelayString = "${app.failover.check-interval:60000}")
+	@Scheduled(fixedDelayString = "#{${app.failover.check-interval:30} * 1000}", initialDelay = 15000)
     public void detectAndHandleFailedSessions() {
         if (!failoverEnabled) {
+			log.debug("⚠️ Failover service is disabled");
             return;
         }
 
@@ -401,7 +409,7 @@ public class FailoverService {
             "CONTROLLER_PORT=" + controllerPort,
             "APP_SECURITY_USERNAME=" + securityUsername,
             "APP_SECURITY_PASSWORD=" + securityPassword,
-            "HEARTBEAT_INTERVAL=30",
+            "HEARTBEAT_INTERVAL=10",
             "IS_BACKUP_CONTAINER=true",
             "ORIGINAL_CLIENT_HOST=" + (session.getClientHost() != null ? session.getClientHost() : "unknown"),
             "RECORDING_JSON=" + (session.getMetadata() != null ? session.getMetadata() : "{}"),

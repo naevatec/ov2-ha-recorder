@@ -1,16 +1,20 @@
 package com.naevatec.ovrecorder.service;
 
-import com.naevatec.ovrecorder.model.RecordingSession;
-import com.naevatec.ovrecorder.repository.SessionRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
+import com.naevatec.ovrecorder.model.RecordingSession;
+import com.naevatec.ovrecorder.repository.SessionRepository;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +44,38 @@ public class SessionService {
   }
 
   /**
+   * Register a new recording session (alternative method for controller compatibility)
+   */
+  public RecordingSession registerSession(RecordingSession session) {
+    log.info("Registering new session: {} for client: {}", session.getSessionId(), session.getClientId());
+
+    if (sessionRepository.exists(session.getSessionId())) {
+      throw new IllegalArgumentException("Session with ID " + session.getSessionId() + " already exists");
+    }
+
+    // Set creation time and initial status
+    session.setCreatedAt(LocalDateTime.now());
+    session.setLastHeartbeat(LocalDateTime.now());
+    session.setActive(true);
+
+    // Set default status if not provided
+    if (session.getStatus() == null) {
+      session.setStatus(RecordingSession.SessionStatus.STARTING);
+    }
+
+    sessionRepository.save(session);
+    log.info("Session registered successfully: {}", session.getSessionId());
+    return session;
+  }
+
+  /**
+   * Check if session exists
+   */
+  public boolean sessionExists(String sessionId) {
+    return sessionRepository.exists(sessionId);
+  }
+
+  /**
    * Get session by ID
    */
   public Optional<RecordingSession> getSession(String sessionId) {
@@ -51,6 +87,13 @@ public class SessionService {
    */
   public List<RecordingSession> getAllActiveSessions() {
     return sessionRepository.findAllActiveSessions();
+  }
+
+  /**
+   * Get count of active sessions
+   */
+  public long getActiveSessionCount() {
+    return sessionRepository.getActiveSessionCount();
   }
 
   /**
@@ -86,6 +129,31 @@ public class SessionService {
   }
 
   /**
+   * Update session heartbeat and return session (for controller compatibility)
+   */
+  public Optional<RecordingSession> updateHeartbeatAndGet(String sessionId, String lastChunk) {
+    Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
+
+    if (sessionOpt.isEmpty()) {
+      log.warn("Attempted to update heartbeat for non-existent session: {}", sessionId);
+      return Optional.empty();
+    }
+
+    RecordingSession session = sessionOpt.get();
+
+    if (lastChunk != null && !lastChunk.isEmpty()) {
+      session.updateHeartbeat(lastChunk);
+      log.debug("Updated heartbeat for session: {} with chunk: {}", sessionId, lastChunk);
+    } else {
+      session.updateHeartbeat();
+      log.debug("Updated heartbeat for session: {}", sessionId);
+    }
+
+    sessionRepository.update(session);
+    return Optional.of(session);
+  }
+
+  /**
    * Update session status
    */
   public boolean updateSessionStatus(String sessionId, RecordingSession.SessionStatus status) {
@@ -98,11 +166,43 @@ public class SessionService {
 
     RecordingSession session = sessionOpt.get();
     session.setStatus(status);
+    switch (session.getStatus()) {
+      case PAUSED:
+      case STOPPING:
+      case COMPLETED:
+      case FAILED:
+      case INACTIVE:
+        session.setActive(false);
+        break;
+      default:
+        break;
+    }
     session.updateHeartbeat(); // Update heartbeat when status changes
     sessionRepository.update(session);
 
     log.info("Updated status for session {}: {}", sessionId, status);
     return true;
+  }
+
+  /**
+   * Mark session as inactive (soft delete)
+   */
+  public Optional<RecordingSession> markSessionInactive(String sessionId) {
+    Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
+
+    if (sessionOpt.isEmpty()) {
+      log.warn("Attempted to mark inactive non-existent session: {}", sessionId);
+      return Optional.empty();
+    }
+
+    RecordingSession session = sessionOpt.get();
+    session.setActive(false);
+    session.setStatus(RecordingSession.SessionStatus.INACTIVE);
+    session.updateHeartbeat();
+    sessionRepository.update(session);
+
+    log.info("Session marked as inactive: {}", sessionId);
+    return Optional.of(session);
   }
 
   /**
@@ -143,6 +243,7 @@ public class SessionService {
     // After a brief moment, mark as completed and optionally remove
     // For now, we'll mark as completed
     session.setStatus(RecordingSession.SessionStatus.COMPLETED);
+    session.setActive(false);
     sessionRepository.update(session);
 
     log.info("Stopped session: {}", sessionId);
@@ -150,7 +251,7 @@ public class SessionService {
   }
 
   /**
-   * Remove a session completely
+   * Remove a session completely (hard delete)
    */
   public boolean removeSession(String sessionId) {
     if (!sessionRepository.exists(sessionId)) {
@@ -164,10 +265,10 @@ public class SessionService {
   }
 
   /**
-   * Get session count
+   * Deregister session (alias for removeSession for controller compatibility)
    */
-  public long getActiveSessionCount() {
-    return sessionRepository.getActiveSessionCount();
+  public boolean deregisterSession(String sessionId) {
+    return removeSession(sessionId);
   }
 
   /**
@@ -179,10 +280,28 @@ public class SessionService {
   }
 
   /**
+   * Clean up old inactive sessions
+   */
+  public int cleanupOldInactiveSessions(LocalDateTime threshold) {
+    List<RecordingSession> allSessions = sessionRepository.findAll();
+    List<String> oldInactiveSessions = allSessions.stream()
+        .filter(session -> !session.isActive() && session.getLastHeartbeat().isBefore(threshold))
+        .map(RecordingSession::getSessionId)
+        .collect(Collectors.toList());
+
+    if (!oldInactiveSessions.isEmpty()) {
+      sessionRepository.deleteAll(oldInactiveSessions);
+      log.info("Cleaned up {} old inactive sessions", oldInactiveSessions.size());
+    }
+
+    return oldInactiveSessions.size();
+  }
+
+  /**
    * Scheduled task to clean up inactive sessions
    * Runs based on app.session.cleanup-interval property
    */
-  @Scheduled(fixedDelayString = "${app.session.cleanup-interval:30000}")
+  @Scheduled(fixedDelayString = "#{${app.session.cleanup-interval:30} * 1000}")
   public void cleanupInactiveSessions() {
     log.debug("Starting cleanup of inactive sessions...");
 
@@ -238,5 +357,31 @@ public class SessionService {
 
     sessionRepository.cleanupOrphanedSessions();
     return inactiveSessions.size();
+  }
+
+  /**
+   * Check the Webhook payload string as JSON object, convert to Map.
+   * Then looks for the status field and if it is "stopped" or "stopping", mark the session as stopped.
+   * @param payload, String payload from webhook
+   */
+  public void handleWebhookPayload(String payload) {
+    try {
+      ObjectMapper objectMapper = new ObjectMapper();
+      Map<String, Object> payloadObj = objectMapper.readValue(payload, new TypeReference<HashMap<String, Object>>() {});
+      String sessionId = (String) payloadObj.get("uniqueSessionId");
+      String status = (String) payloadObj.get("status");
+      if (sessionId != null && status != null) {
+        if (status.equalsIgnoreCase("stopped")) {
+			boolean didStop = updateSessionStatus(sessionId, RecordingSession.SessionStatus.STOPPING);
+			if (didStop)
+				log.info("Session {} marked as STOPPING due to webhook status: {}", sessionId, status);
+			else
+				log.warn("Failed to mark session {} as STOPPING - session not found", sessionId);
+		}
+      }
+    } catch (Exception e) {
+      log.error("Failed to parse webhook payload: {}", e.getMessage());
+      return;
+    }
   }
 }

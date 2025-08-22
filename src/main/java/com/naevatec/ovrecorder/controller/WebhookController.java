@@ -1,6 +1,6 @@
 package com.naevatec.ovrecorder.controller;
 
-import com.naevatec.ovrecorder.service.WebhookRelayService;
+import com.naevatec.ovrecorder.service.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 public class WebhookController {
 
     private final WebhookRelayService webhookRelayService;
+	private final SessionService sessionService;
 
     /**
      * Primary webhook endpoint - receives all OpenVidu webhook notifications
@@ -107,6 +108,8 @@ public class WebhookController {
                 "timestamp", java.time.LocalDateTime.now(),
                 "processingTimeMs", processingTime
             );
+
+			sessionService.handleWebhookPayload(payload);
 
             // Log successful reception
             log.info("OpenVidu webhook received and relay initiated in {}ms from {}",

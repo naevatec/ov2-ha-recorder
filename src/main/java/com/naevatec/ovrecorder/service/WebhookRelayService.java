@@ -27,24 +27,26 @@ import java.util.concurrent.atomic.AtomicLong;
 @Slf4j
 public class WebhookRelayService {
 
-    @Value("${openvidu.webhook.endpoint:}")
+    @Value("${app.webhook.url:}")
     private String webhookEndpoint;
 
-    @Value("${openvidu.webhook.headers:}")
+    @Value("${app.webhook.headers:}")
     private String webhookHeaders;
 
-    @Value("${openvidu.webhook.timeout:5000}")
+    @Value("${app.webhook.timeout-ms:5000}")
     private long timeoutMs;
 
-    @Value("${openvidu.webhook.retry-attempts:3}")
+    @Value("${app.webhook.retries:3}")
     private int retryAttempts;
 
-    @Value("${openvidu.webhook.retry-delay:1000}")
+    @Value("${app.webhook.retry-delay-ms:1000}")
     private long retryDelayMs;
+
+	@Value("${app.webhook.enabled:false}")
+    private boolean relayEnabled;
 
     private RestTemplate restTemplate;
     private HttpHeaders defaultHeaders;
-    private boolean relayEnabled = false;
 
     // Metrics
     private final AtomicLong totalRequests = new AtomicLong(0);
