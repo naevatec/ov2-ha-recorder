@@ -181,7 +181,7 @@ start_ha_controller() {
     print_info "Waiting for HA Controller to be ready..."
     timeout=90
     elapsed=0
-    ha_port="${HA_RECORDER_PORT:-8080}"
+    ha_port="${HA_CONTROLLER_PORT:-8080}"
     
     while [ $elapsed -lt $timeout ]; do
         if curl -s -f "http://localhost:${ha_port}/actuator/health" >/dev/null 2>&1; then
@@ -189,8 +189,8 @@ start_ha_controller() {
             
             # Test HA Controller API
             print_info "Testing HA Controller API..."
-            username="${HA_RECORDER_USERNAME:-recorder}"
-            password="${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}"
+            username="${HA_CONTROLLER_USERNAME:-recorder}"
+            password="${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}"
             
             if curl -s -u "${username}:${password}" \
                     "http://localhost:${ha_port}/api/sessions/health" | grep -q "healthy"; then
@@ -218,9 +218,9 @@ start_ha_controller() {
 test_ha_controller_api() {
     print_step "Testing HA Controller API..."
     
-    ha_port="${HA_RECORDER_PORT:-8080}"
-    username="${HA_RECORDER_USERNAME:-recorder}"
-    password="${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}"
+    ha_port="${HA_CONTROLLER_PORT:-8080}"
+    username="${HA_CONTROLLER_USERNAME:-recorder}"
+    password="${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}"
     
     # Check if HA Controller is running
     if ! docker compose ps ov-recorder-ha-controller | grep -q "Up"; then
@@ -293,7 +293,7 @@ show_service_status() {
     
     echo ""
     print_info "Service URLs:"
-    ha_port="${HA_RECORDER_PORT:-8080}"
+    ha_port="${HA_CONTROLLER_PORT:-8080}"
     echo "  • HA Controller API:  http://localhost:${ha_port}/api/sessions"
     echo "  • HA Controller Health: http://localhost:${ha_port}/actuator/health"
     echo "  • MinIO Console:      http://localhost:${MINIO_CONSOLE_PORT:-9001}"
@@ -302,8 +302,8 @@ show_service_status() {
     
     echo ""
     print_info "Authentication:"
-    username="${HA_RECORDER_USERNAME:-recorder}"
-    password="${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}"
+    username="${HA_CONTROLLER_USERNAME:-recorder}"
+    password="${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}"
     echo "  • HA Controller: ${username} / [password hidden]"
     echo "  • MinIO: ${HA_AWS_ACCESS_KEY:-naeva_minio} / [password hidden]"
     

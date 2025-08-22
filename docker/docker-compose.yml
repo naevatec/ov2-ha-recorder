@@ -70,15 +70,15 @@ services:
         sources: "../"
     container_name: ov-recorder-ha-controller
     ports:
-      - "${HA_RECORDER_PORT:-8080}:8080"
+      - "${HA_CONTROLLER_PORT:-8080}:8080"
     environment:
       # Redis connection
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
       - SPRING_DATA_REDIS_DATABASE=0
       # Security
-      - APP_SECURITY_USERNAME=${HA_RECORDER_USERNAME:-recorder}
-      - APP_SECURITY_PASSWORD=${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}
+      - HA_CONTROLLER_USERNAME=${HA_CONTROLLER_USERNAME:-recorder}
+      - HA_CONTROLLER_PASSWORD=${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}
       # Session management
       - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30000}
       - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-600}
@@ -98,8 +98,8 @@ services:
 
       # Recording Environment Variables (passed to backup containers)
       - RECORDING_BASE_URL=${RECORDING_BASE_URL:-https://devel.naevatec.com:4443/openvidu}
-      - CONTROLLER_HOST=ov-recorder
-      - CONTROLLER_PORT=8080
+      - HA_CONTROLLER_HOST=ov-recorder
+      - HA_CONTROLLER_PORT=8080
       - HEARTBEAT_INTERVAL=30
 
       # OpenVidu Webhook Relay Configuration
@@ -160,8 +160,8 @@ services:
       - CHUNK_TIME_SIZE=${CHUNK_TIME_SIZE:-20}
       # HA Controller connection
       - HA_CONTROLLER_URL=http://ov-recorder-ha-controller:8080
-      - HA_CONTROLLER_USERNAME=${HA_RECORDER_USERNAME:-recorder}
-      - HA_CONTROLLER_PASSWORD=${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}
+      - HA_CONTROLLER_USERNAME=${HA_CONTROLLER_USERNAME:-recorder}
+      - HA_CONTROLLER_PASSWORD=${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}
       # Recording settings
       - RECORDING_PATH=/recordings
     volumes:

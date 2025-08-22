@@ -107,7 +107,7 @@ show_status() {
         if command -v grep >/dev/null 2>&1; then
             echo "   TAG: $(grep '^TAG=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
             echo "   HA_AWS_S3_SERVICE_ENDPOINT: $(grep '^HA_AWS_S3_SERVICE_ENDPOINT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
-            echo "   HA_RECORDER_PORT: $(grep '^HA_RECORDER_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
+            echo "   HA_CONTROLLER_PORT: $(grep '^HA_CONTROLLER_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
             echo "   MINIO_API_PORT: $(grep '^MINIO_API_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
         fi
     else
@@ -116,7 +116,7 @@ show_status() {
     
     # Check if HA Controller is running
     if docker compose ps ov-recorder-ha-controller 2>/dev/null | grep -q "Up"; then
-        ha_port="${HA_RECORDER_PORT:-8080}"
+        ha_port="${HA_CONTROLLER_PORT:-8080}"
         echo ""
         print_info "HA Controller Status: RUNNING"
         echo "   API: http://localhost:${ha_port}/api/sessions"

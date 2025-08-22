@@ -248,7 +248,7 @@ start_ha_controller() {
     echo "⏳ Waiting for HA Controller to be ready..."
     timeout=90
     elapsed=0
-    ha_port="${HA_RECORDER_PORT:-8080}"
+    ha_port="${HA_CONTROLLER_PORT:-8080}"
     
     while [ $elapsed -lt $timeout ]; do
         if curl -s -f "http://localhost:${ha_port}/actuator/health" >/dev/null 2>&1; then
@@ -256,8 +256,8 @@ start_ha_controller() {
             
             # Test HA Controller API
             echo "🧪 Testing HA Controller API..."
-            username="${HA_RECORDER_USERNAME:-recorder}"
-            password="${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}"
+            username="${HA_CONTROLLER_USERNAME:-recorder}"
+            password="${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}"
             
             if curl -s -u "${username}:${password}" \
                     "http://localhost:${ha_port}/api/sessions/health" | grep -q "healthy"; then
@@ -296,11 +296,11 @@ show_final_status() {
     
     echo ""
     echo "📡 HA Controller Status:"
-    ha_port="${HA_RECORDER_PORT:-8080}"
+    ha_port="${HA_CONTROLLER_PORT:-8080}"
     echo "   • API: http://localhost:${ha_port}/api/sessions"
     echo "   • Health: http://localhost:${ha_port}/actuator/health"
-    username="${HA_RECORDER_USERNAME:-recorder}"
-    password="${HA_RECORDER_PASSWORD:-rec0rd3r_2024!}"
+    username="${HA_CONTROLLER_USERNAME:-recorder}"
+    password="${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}"
     echo "   • Auth: ${username} / [password hidden]"
     echo ""
     echo "📋 Quick Commands:"
@@ -338,7 +338,7 @@ main() {
     echo "🎉 Process completed successfully!"
     echo "💡 Services are running. Use 'docker compose down' to stop when done."
     echo "📸 Image ready: openvidu/openvidu-recording:${TAG}"
-    echo "📡 HA Controller ready: http://localhost:${HA_RECORDER_PORT:-8080}"
+    echo "📡 HA Controller ready: http://localhost:${HA_CONTROLLER_PORT:-8080}"
 }
 
 # Execute main function

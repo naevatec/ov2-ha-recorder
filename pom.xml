@@ -127,6 +127,13 @@
             <version>${docker-java.version}</version>
         </dependency>
 
+        <!-- Replaced jersey transport with httpclient5 transport -->
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-transport-httpclient5</artifactId>
+            <version>${docker-java.version}</version>
+        </dependency>
+
         <!-- SpringDoc OpenAPI 3 (Swagger) - Only for non-production profiles -->
         <dependency>
             <groupId>org.springdoc</groupId>

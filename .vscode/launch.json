@@ -24,7 +24,7 @@
       "projectName": "ov-recorder",
       "args": "",
       "vmArgs": "-Dspring.profiles.active=dev -Dlogging.level.com.naevatec.ovrecorder=DEBUG -D spring.data.redis.host=devel.naevatec.com -Dspring.data.redis.port=15336",
-      "env": {"APP_SECURITY_USERNAME": "naeva_admin", "APP_SECURITY_PASSWORD": "n43v4T3c"},
+      "env": {"HA_CONTROLLER_USERNAME": "naeva_admin", "HA_CONTROLLER_PASSWORD": "n43v4T3c"},
       "console": "internalConsole",
       "stopOnEntry": false,
       "internalConsoleOptions": "openOnSessionStart"

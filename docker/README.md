@@ -92,15 +92,15 @@ MINIO_API_PORT=9000                  # MinIO API port
 MINIO_CONSOLE_PORT=9001              # MinIO console port
 
 # HA Controller Configuration
-CONTROLLER_HOST=ov-recorder          # HA Controller hostname (usually service name)
-CONTROLLER_PORT=8080                 # HA Controller port
-APP_SECURITY_USERNAME=recorder       # HA Controller API username
-APP_SECURITY_PASSWORD=rec0rd3r_2024! # HA Controller API password
+HA_CONTROLLER_HOST=ov-recorder          # HA Controller hostname (usually service name)
+HA_CONTROLLER_PORT=8080                 # HA Controller port
+HA_CONTROLLER_USERNAME=recorder       # HA Controller API username
+HA_CONTROLLER_PASSWORD=rec0rd3r_2024! # HA Controller API password
 HEARTBEAT_INTERVAL=30                # Heartbeat interval in seconds
 RECORDING_BASE_URL=https://devel.naevatec.com:4443/openvidu  # Base URL for recordings
 
 # HA Controller Internal Configuration
-HA_RECORDER_PORT=8080               # HA Controller external port
+HA_CONTROLLER_PORT=8080               # HA Controller external port
 HA_SESSION_CLEANUP_INTERVAL=30000   # Session review frequency in milliseconds
 HA_SESSION_MAX_INACTIVE_TIME=600    # Max time before session cleanup
 
@@ -117,8 +117,8 @@ SWAGGER_UI_ENABLED=true             # Enable/disable Swagger UI
 
 ⚠️ **Important**: 
 - `HA_AWS_S3_SERVICE_ENDPOINT` must match `http://YOUR_PRIVATE_IP:MINIO_API_PORT`
-- `CONTROLLER_HOST` should match the Docker service name (`ov-recorder`)
-- `APP_SECURITY_USERNAME` and `APP_SECURITY_PASSWORD` must match between recorder and HA Controller
+- `HA_CONTROLLER_HOST` should match the Docker service name (`ov-recorder`)
+- `HA_CONTROLLER_USERNAME` and `HA_CONTROLLER_PASSWORD` must match between recorder and HA Controller
 
 ## 🐳 Docker Services
 
@@ -158,7 +158,7 @@ The project uses Docker Compose v2 with the following services:
    # Copy the provided .env template and customize
    # Update HA_AWS_S3_SERVICE_ENDPOINT with your private IP
    # Configure HA Controller credentials
-   # Set CONTROLLER_HOST to match your Docker service name
+   # Set HA_CONTROLLER_HOST to match your Docker service name
    ```
 
 2. **Validate configuration**:
@@ -264,8 +264,8 @@ The integrated HA Controller provides a simplified REST API for essential sessio
 ### Authentication
 
 All API endpoints require HTTP Basic Authentication:
-- **Username**: `recorder` (configurable via `APP_SECURITY_USERNAME`)
-- **Password**: `rec0rd3r_2024!` (configurable via `APP_SECURITY_PASSWORD`)
+- **Username**: `recorder` (configurable via `HA_CONTROLLER_USERNAME`)
+- **Password**: `rec0rd3r_2024!` (configurable via `HA_CONTROLLER_PASSWORD`)
 
 ### Simplified API Design
 
@@ -411,12 +411,12 @@ Add these to `/recordings/.env` in the recorder container:
 
 ```bash
 # HA Controller Connection (REQUIRED)
-CONTROLLER_HOST=ov-recorder
-CONTROLLER_PORT=8080
+HA_CONTROLLER_HOST=ov-recorder
+HA_CONTROLLER_PORT=8080
 
 # HA Controller Authentication (REQUIRED)
-APP_SECURITY_USERNAME=recorder
-APP_SECURITY_PASSWORD=rec0rd3r_2024!
+HA_CONTROLLER_USERNAME=recorder
+HA_CONTROLLER_PASSWORD=rec0rd3r_2024!
 
 # Heartbeat Configuration (OPTIONAL - has defaults)
 HEARTBEAT_INTERVAL=30
@@ -532,7 +532,7 @@ curl -u recorder:rec0rd3r_2024! -X DELETE http://localhost:8080/api/sessions/tes
 
 #### Environment Validation Failures
 
-**Issue**: `CONTROLLER_HOST` not accessible
+**Issue**: `HA_CONTROLLER_HOST` not accessible
 ```
 ✖ HA Controller not accessible at ov-recorder:8080
 ```
@@ -658,8 +658,8 @@ docker compose exec openvidu-recording find /recordings/*/chunks/ -name "*.mp4" 
 - **MinIO API**: http://localhost:9000
 
 - **HA Controller API**: http://localhost:8080/api/sessions
-  - Username: `recorder` (or your `APP_SECURITY_USERNAME`)
-  - Password: `rec0rd3r_2024!` (or your `APP_SECURITY_PASSWORD`)
+  - Username: `recorder` (or your `HA_CONTROLLER_USERNAME`)
+  - Password: `rec0rd3r_2024!` (or your `HA_CONTROLLER_PASSWORD`)
 
 - **HA Controller Health**: http://localhost:8080/actuator/health
 
@@ -853,8 +853,8 @@ For production use:
    ```bash
    HA_AWS_ACCESS_KEY=your-secure-access-key
    HA_AWS_SECRET_KEY=your-secure-secret-key
-   APP_SECURITY_USERNAME=your-secure-username
-   APP_SECURITY_PASSWORD=your-very-secure-password
+   HA_CONTROLLER_USERNAME=your-secure-username
+   HA_CONTROLLER_PASSWORD=your-very-secure-password
    ```
 
 2. **Set production profile**:

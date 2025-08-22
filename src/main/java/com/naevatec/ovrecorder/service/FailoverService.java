@@ -16,12 +16,13 @@ import com.naevatec.ovrecorder.model.RecordingSession;
 import com.naevatec.ovrecorder.repository.SessionRepository;
 import lombok.RequiredArgsConstructor;
 
-// Step 2: Uncomment basic Docker imports
+// Fixed Docker imports with HttpClient5
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
+import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;  // NEW: HttpClient5 import
 
 @Service
 @RequiredArgsConstructor
@@ -32,7 +33,7 @@ public class FailoverService {
     private final SessionService sessionService;
 
     // Configuration properties
-    @Value("${app.failover.enabled:true}")  // Step 2: Enable by default
+    @Value("${app.failover.enabled:true}")
     private boolean failoverEnabled;
 
     @Value("${app.failover.heartbeat-timeout:300}")
@@ -63,67 +64,127 @@ public class FailoverService {
     @Value("${RECORDING_BASE_URL:}")
     private String recordingBaseUrl;
 
-    @Value("${CONTROLLER_HOST:ov-recorder}")
+    @Value("${HA_CONTROLLER_HOST:ov-recorder}")
     private String controllerHost;
 
-    @Value("${CONTROLLER_PORT:8080}")
+    @Value("${HA_CONTROLLER_PORT:8080}")
     private String controllerPort;
 
-    @Value("${APP_SECURITY_USERNAME:recorder}")
+    @Value("${HA_CONTROLLER_USERNAME:recorder}")
     private String securityUsername;
 
-    @Value("${APP_SECURITY_PASSWORD:rec0rd3r_2024!}")
+    @Value("${HA_CONTROLLER_PASSWORD:rec0rd3r_2024!}")
     private String securityPassword;
 
-    // Step 2: Uncomment Docker client variable
     private DockerClient dockerClient;
+    private volatile boolean dockerInitialized = false;
+    private volatile boolean dockerInitializationFailed = false;
     private final Map<String, String> activeBackupContainers = new ConcurrentHashMap<>();
 
     @PostConstruct
-    public void initializeDockerClient() {
+    public void postConstruct() {
         if (!failoverEnabled) {
             log.info("Failover service is disabled");
             return;
         }
 
+        log.info("✅ Failover service initialized (Docker client will be created on first use)");
+        log.info("Docker socket path: {}", dockerSocketPath);
+        log.info("OpenVidu image: {}:{}", openviduRecordImage, imageTag);
+        log.info("Docker network: {}", dockerNetwork);
+    }
+
+    /**
+     * Lazy initialization of Docker client - only connects when actually needed
+     */
+    private synchronized DockerClient getDockerClient() {
+        if (!failoverEnabled) {
+            throw new IllegalStateException("Failover service is disabled");
+        }
+
+        if (dockerInitializationFailed) {
+            throw new IllegalStateException("Docker client initialization previously failed");
+        }
+
+        if (dockerClient != null && dockerInitialized) {
+            return dockerClient;
+        }
+
         try {
-            // Step 2: Uncomment basic Docker client creation
-            dockerClient = DockerClientBuilder.getInstance().build();
+            log.info("🐳 Lazy initializing Docker client with HttpClient5 transport...");
+
+            // Use Docker context configuration (respects remote contexts)
+            DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
+                // Don't specify dockerHost - let it use the current Docker context
+                .build();
+
+            ApacheDockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()
+                .dockerHost(config.getDockerHost())
+                .sslConfig(config.getSSLConfig())
+                .maxConnections(100)
+                .connectionTimeout(Duration.ofSeconds(30))
+                .responseTimeout(Duration.ofSeconds(45))
+                .build();
+
+            dockerClient = DockerClientBuilder.getInstance(config)
+                .withDockerHttpClient(httpClient)
+                .build();
 
             // Test connection
             dockerClient.pingCmd().exec();
-            log.info("Successfully connected to Docker daemon");
+            log.info("✅ Successfully connected to Docker daemon with HttpClient5");
 
-            // Step 3: Add image pulling
-            pullOpenViduImageIfNeeded();
+            dockerInitialized = true;
 
-        } catch (Exception e) {
-            log.error("Failed to initialize Docker client: {}", e.getMessage(), e);
-            if (failoverEnabled) {
-                throw new RuntimeException("Cannot initialize Docker client for failover service", e);
+            // Pull OpenVidu image if needed (in background)
+            try {
+                pullOpenViduImageIfNeeded();
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to pull OpenVidu image (non-critical): {}", e.getMessage());
             }
 
-            // Step 3: Clean up completed backup containers
-            cleanupCompletedBackupContainers();
+            // Clean up any existing backup containers (in background)
+            try {
+                cleanupCompletedBackupContainers();
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to cleanup existing containers (non-critical): {}", e.getMessage());
+            }
+
+            return dockerClient;
+
+        } catch (Exception e) {
+            log.error("❌ Failed to initialize Docker client: {}", e.getMessage(), e);
+            dockerInitializationFailed = true;
+            throw new RuntimeException("Cannot initialize Docker client for failover service", e);
         }
     }
 
     @PreDestroy
     public void cleanup() {
-        log.info("Cleaning up failover service");
+        log.info("🧹 Cleaning up failover service");
 
-        // Step 2: Add basic Docker client cleanup
+        // Stop all active backup containers
+        for (String sessionId : activeBackupContainers.keySet()) {
+            try {
+                stopBackupContainer(sessionId);
+            } catch (Exception e) {
+                log.warn("Error stopping backup container during cleanup: {}", e.getMessage());
+            }
+        }
+
+        // Close Docker client
         if (dockerClient != null) {
             try {
                 dockerClient.close();
+                log.info("✅ Docker client closed successfully");
             } catch (Exception e) {
-                log.warn("Error closing Docker client: {}", e.getMessage());
+                log.warn("⚠️ Error closing Docker client: {}", e.getMessage());
             }
         }
     }
 
     /**
-     * Scheduled task to detect failed sessions (Docker launching disabled for now)
+     * Scheduled task to detect failed sessions
      */
     @Scheduled(fixedDelayString = "${app.failover.check-interval:60000}")
     public void detectAndHandleFailedSessions() {
@@ -131,7 +192,7 @@ public class FailoverService {
             return;
         }
 
-        log.debug("Starting failover detection scan...");
+        log.debug("🔍 Starting failover detection scan...");
 
         try {
             var allSessions = sessionRepository.findAllActiveSessions();
@@ -139,13 +200,17 @@ public class FailoverService {
 
             for (RecordingSession session : allSessions) {
                 if (shouldStartBackupRecording(session, now)) {
-                    // Step 3: Uncomment container launching
                     startBackupRecording(session);
                 }
             }
 
         } catch (Exception e) {
-            log.error("Error during failover detection: {}", e.getMessage(), e);
+            // Don't log Docker connection errors during scheduled checks
+            if (e.getMessage().contains("Docker") || e.getMessage().contains("Unsupported protocol")) {
+                log.debug("⚠️ Docker not available for failover detection: {}", e.getMessage());
+            } else {
+                log.error("❌ Error during failover detection: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -172,7 +237,7 @@ public class FailoverService {
             long secondsSinceLastHeartbeat = Duration.between(session.getLastHeartbeat(), now).getSeconds();
 
             if (secondsSinceLastHeartbeat > heartbeatTimeoutSeconds) {
-                log.warn("Session {} heartbeat timeout: {} seconds > {} threshold",
+                log.warn("⚠️ Session {} heartbeat timeout: {} seconds > {} threshold",
                     sessionId, secondsSinceLastHeartbeat, heartbeatTimeoutSeconds);
                 return true;
             }
@@ -183,7 +248,7 @@ public class FailoverService {
             long secondsSinceLastChunk = Duration.between(session.getLastHeartbeat(), now).getSeconds();
 
             if (secondsSinceLastChunk > stuckChunkTimeoutSeconds) {
-                log.warn("Session {} stuck chunk detected: chunk '{}' for {} seconds > {} threshold",
+                log.warn("⚠️ Session {} stuck chunk detected: chunk '{}' for {} seconds > {} threshold",
                     sessionId, session.getLastChunk(), secondsSinceLastChunk, stuckChunkTimeoutSeconds);
                 return true;
             }
@@ -203,11 +268,18 @@ public class FailoverService {
         }
 
         try {
-            log.info("Stopping backup container {} for session {}", containerId, sessionId);
+            log.info("🛑 Stopping backup container {} for session {}", containerId, sessionId);
+
+            DockerClient client = getDockerClient(); // Lazy initialization
 
             // Stop container (with timeout)
-            dockerClient.stopContainerCmd(containerId)
+            client.stopContainerCmd(containerId)
                 .withTimeout(30)
+                .exec();
+
+            // Remove container
+            client.removeContainerCmd(containerId)
+                .withForce(true)
                 .exec();
 
             // Remove from tracking
@@ -222,11 +294,11 @@ public class FailoverService {
                 sessionRepository.update(session);
             }
 
-            log.info("Successfully stopped backup container for session: {}", sessionId);
+            log.info("✅ Successfully stopped backup container for session: {}", sessionId);
             return true;
 
         } catch (Exception e) {
-            log.error("Failed to stop backup container {} for session {}: {}", containerId, sessionId, e.getMessage(), e);
+            log.error("❌ Failed to stop backup container {} for session {}: {}", containerId, sessionId, e.getMessage(), e);
             return false;
         }
     }
@@ -238,33 +310,42 @@ public class FailoverService {
         String sessionId = session.getSessionId();
 
         try {
-            log.info("Starting backup recording for session: {}", sessionId);
+            log.info("🚀 Starting backup recording for session: {}", sessionId);
+
+            DockerClient client = getDockerClient(); // Lazy initialization
 
             // Generate container name
             String containerName = String.format("%s-%s-%d",
                 backupContainerPrefix, sessionId, System.currentTimeMillis());
 
+            // Determine starting chunk
+            String startChunk = determineStartChunk(session);
+
             // Prepare environment variables
-            var envVars = buildEnvironmentVariables(session);
+            var envVars = buildEnvironmentVariables(session, startChunk);
 
             // Create container
-            CreateContainerResponse container = dockerClient.createContainerCmd(openviduRecordImage + ":" + imageTag)
+            CreateContainerResponse container = client.createContainerCmd(openviduRecordImage + ":" + imageTag)
                 .withName(containerName)
                 .withEnv(envVars.toArray(new String[0]))
                 .withNetworkMode(dockerNetwork)
                 .withHostConfig(HostConfig.newHostConfig()
-                    .withAutoRemove(true)
-                    .withRestartPolicy(RestartPolicy.noRestart()))
+                    .withAutoRemove(false)  // Don't auto-remove for debugging
+                    .withRestartPolicy(RestartPolicy.noRestart())
+                    .withShmSize(2L * 1024 * 1024 * 1024)  // 2GB shared memory
+                    .withMemory(4L * 1024 * 1024 * 1024)   // 4GB memory limit
+                    .withCpuCount(2L))                      // 2 CPU cores
                 .withLabels(Map.of(
                     "session.id", sessionId,
                     "container.type", "backup-recorder",
-                    "created.by", "ha-controller"))
+                    "created.by", "ha-controller",
+                    "start.chunk", startChunk))
                 .exec();
 
             String containerId = container.getId();
 
             // Start container
-            dockerClient.startContainerCmd(containerId).exec();
+            client.startContainerCmd(containerId).exec();
 
             // Update session with backup container info
             session.setBackupContainerId(containerId);
@@ -274,18 +355,45 @@ public class FailoverService {
             // Track active backup container
             activeBackupContainers.put(sessionId, containerId);
 
-            log.info("Successfully started backup container {} for session {}", containerId, sessionId);
+            log.info("✅ Successfully started backup container {} for session {} (starting from chunk {})",
+                containerId, sessionId, startChunk);
 
         } catch (Exception e) {
-            log.error("Failed to start backup recording for session {}: {}", sessionId, e.getMessage(), e);
+            log.error("❌ Failed to start backup recording for session {}: {}", sessionId, e.getMessage(), e);
         }
+    }
+
+    /**
+     * Determine the starting chunk number for backup container
+     */
+    private String determineStartChunk(RecordingSession session) {
+        String lastChunk = session.getLastChunk();
+
+        if (lastChunk != null && !lastChunk.isEmpty()) {
+            try {
+                // Extract chunk number from filename (e.g., "0003.mp4" -> "0003")
+                String chunkNumber = lastChunk.replaceAll("[^0-9]", "");
+                if (!chunkNumber.isEmpty()) {
+                    int nextChunk = Integer.parseInt(chunkNumber) + 1;
+                    return String.format("%04d", nextChunk);
+                }
+            } catch (NumberFormatException e) {
+                log.warn("Failed to parse chunk number from: {}", lastChunk);
+            }
+        }
+
+        // Default to chunk 0001 if we can't determine
+        return "0001";
     }
 
     /**
      * Build environment variables for backup recording container
      */
-    private java.util.List<String> buildEnvironmentVariables(RecordingSession session) {
+    private java.util.List<String> buildEnvironmentVariables(RecordingSession session, String startChunk) {
         return java.util.List.of(
+            "VIDEO_ID=" + session.getSessionId(),
+            "VIDEO_NAME=" + session.getSessionId(),
+            "START_CHUNK=" + startChunk,
             "SESSION_ID=" + session.getSessionId(),
             "CLIENT_ID=" + session.getClientId() + "-backup",
             "RECORDING_BASE_URL=" + recordingBaseUrl,
@@ -294,9 +402,9 @@ public class FailoverService {
             "APP_SECURITY_USERNAME=" + securityUsername,
             "APP_SECURITY_PASSWORD=" + securityPassword,
             "HEARTBEAT_INTERVAL=30",
-            "BACKUP_MODE=true",
+            "IS_BACKUP_CONTAINER=true",
             "ORIGINAL_CLIENT_HOST=" + (session.getClientHost() != null ? session.getClientHost() : "unknown"),
-            "METADATA=" + (session.getMetadata() != null ? session.getMetadata() : "{}"),
+            "RECORDING_JSON=" + (session.getMetadata() != null ? session.getMetadata() : "{}"),
             "RECORDING_PATH=" + (session.getRecordingPath() != null ? session.getRecordingPath() : "")
         );
     }
@@ -306,27 +414,28 @@ public class FailoverService {
      */
     private void pullOpenViduImageIfNeeded() {
         try {
+            DockerClient client = getDockerClient(); // Lazy initialization
             String fullImageName = openviduRecordImage + ":" + imageTag;
 
             // Check if image exists locally
             try {
-                dockerClient.inspectImageCmd(fullImageName).exec();
-                log.info("OpenVidu recording image {} already exists locally", fullImageName);
+                client.inspectImageCmd(fullImageName).exec();
+                log.info("✅ OpenVidu recording image {} already exists locally", fullImageName);
                 return;
             } catch (Exception e) {
-                log.info("OpenVidu recording image {} not found locally, pulling...", fullImageName);
+                log.info("🐳 OpenVidu recording image {} not found locally, pulling...", fullImageName);
             }
 
             // Pull the image
-            dockerClient.pullImageCmd(openviduRecordImage)
+            client.pullImageCmd(openviduRecordImage)
                 .withTag(imageTag)
                 .start()
                 .awaitCompletion();
 
-            log.info("Successfully pulled OpenVidu recording image: {}", fullImageName);
+            log.info("✅ Successfully pulled OpenVidu recording image: {}", fullImageName);
 
         } catch (Exception e) {
-            log.error("Failed to pull OpenVidu recording image: {}", e.getMessage(), e);
+            log.error("❌ Failed to pull OpenVidu recording image: {}", e.getMessage(), e);
         }
     }
 
@@ -350,23 +459,39 @@ public class FailoverService {
      * Get failover status and statistics
      */
     public Map<String, Object> getFailoverStatus() {
-        return Map.of(
-            "enabled", failoverEnabled,
-            "heartbeatTimeoutSeconds", heartbeatTimeoutSeconds,
-            "stuckChunkTimeoutSeconds", stuckChunkTimeoutSeconds,
-            "checkIntervalMs", checkIntervalMs,
-            "activeBackupContainers", activeBackupContainers.size(),
-            "backupContainerDetails", activeBackupContainers,
-            "dockerConnected", dockerClient != null,  // Step 2: Update status
-            "openviduImage", openviduRecordImage + ":" + imageTag
-        );
+        Map<String, Object> status = new java.util.HashMap<>();
+        status.put("enabled", failoverEnabled);
+        status.put("heartbeatTimeoutSeconds", heartbeatTimeoutSeconds);
+        status.put("stuckChunkTimeoutSeconds", stuckChunkTimeoutSeconds);
+        status.put("checkIntervalMs", checkIntervalMs);
+        status.put("activeBackupContainers", activeBackupContainers.size());
+        status.put("backupContainerDetails", activeBackupContainers);
+        status.put("dockerInitialized", dockerInitialized);
+        status.put("dockerInitializationFailed", dockerInitializationFailed);
+        status.put("openviduImage", openviduRecordImage + ":" + imageTag);
+
+        // Test Docker connection only if already initialized
+        if (dockerInitialized && dockerClient != null) {
+            try {
+                dockerClient.pingCmd().exec();
+                status.put("dockerStatus", "connected");
+            } catch (Exception e) {
+                status.put("dockerStatus", "error: " + e.getMessage());
+            }
+        } else if (dockerInitializationFailed) {
+            status.put("dockerStatus", "initialization failed");
+        } else {
+            status.put("dockerStatus", "not initialized (lazy mode)");
+        }
+
+        return status;
     }
 
     /**
      * Manual trigger for failover detection (for testing/debugging)
      */
     public Map<String, Object> triggerManualFailoverCheck() {
-        log.info("Manual failover check triggered");
+        log.info("🔍 Manual failover check triggered");
 
         if (!failoverEnabled) {
             return Map.of("error", "Failover is disabled");
@@ -377,13 +502,15 @@ public class FailoverService {
             return Map.of(
                 "message", "Manual failover check completed",
                 "timestamp", LocalDateTime.now(),
-                "activeBackupContainers", activeBackupContainers.size()
+                "activeBackupContainers", activeBackupContainers.size(),
+                "dockerInitialized", dockerInitialized
             );
         } catch (Exception e) {
-            log.error("Manual failover check failed: {}", e.getMessage(), e);
+            log.error("❌ Manual failover check failed: {}", e.getMessage(), e);
             return Map.of(
                 "error", "Manual failover check failed: " + e.getMessage(),
-                "timestamp", LocalDateTime.now()
+                "timestamp", LocalDateTime.now(),
+                "dockerInitialized", dockerInitialized
             );
         }
     }
