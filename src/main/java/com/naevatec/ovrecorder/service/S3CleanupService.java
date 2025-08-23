@@ -58,19 +58,19 @@ public class S3CleanupService {
             return;
         }
 
-        if (bucketName == null || bucketName.trim().isEmpty()) {
-            log.warn("⚠️ S3 bucket name not configured, S3 cleanup disabled");
-            return;
-        }
+        log.info("🔧 Starting S3 client initialization...");
 
-        if (accessKey == null || accessKey.trim().isEmpty() ||
-            secretKey == null || secretKey.trim().isEmpty()) {
-            log.warn("⚠️ S3 credentials not configured, S3 cleanup disabled");
+        // Validate configuration
+        if (!validateS3Configuration()) {
             return;
         }
 
         try {
-            log.info("🔧 Initializing S3 client for cleanup operations...");
+            log.info("🔗 Initializing S3 client for cleanup operations...");
+            log.info("   📍 Endpoint: {}", serviceEndpoint != null && !serviceEndpoint.trim().isEmpty() ? serviceEndpoint : "default AWS S3");
+            log.info("   🪣 Bucket: {}", bucketName);
+            log.info("   🌍 Region: {}", region);
+            log.info("   🔑 Access Key: {}***", accessKey != null && accessKey.length() > 3 ? accessKey.substring(0, 3) : "null");
 
             AwsBasicCredentials credentials = AwsBasicCredentials.create(accessKey, secretKey);
 
@@ -80,22 +80,23 @@ public class S3CleanupService {
 
             // Use endpoint override for MinIO or custom S3-compatible services
             if (serviceEndpoint != null && !serviceEndpoint.trim().isEmpty()) {
-                clientBuilder.endpointOverride(URI.create(serviceEndpoint));
-                log.info("🔗 Using custom S3 endpoint: {}", serviceEndpoint);
+                try {
+                    URI endpointUri = URI.create(serviceEndpoint);
+                    clientBuilder.endpointOverride(endpointUri);
+                    log.info("🔗 Using custom S3 endpoint: {}", serviceEndpoint);
+                } catch (Exception e) {
+                    log.error("❌ Invalid S3 endpoint URL '{}': {}", serviceEndpoint, e.getMessage());
+                    return;
+                }
             }
 
             s3Client = clientBuilder.build();
 
-            // Test S3 connectivity
+            // Test S3 connectivity with detailed error handling
             testS3Connection();
 
             s3Available = true;
             log.info("✅ S3 cleanup service initialized successfully");
-            log.info("   - Bucket: {}", bucketName);
-            log.info("   - Region: {}", region);
-            log.info("   - Endpoint: {}", serviceEndpoint != null ? serviceEndpoint : "default AWS S3");
-            log.info("   - Chunk folder: {}", chunkFolder);
-            log.info("   - Async cleanup: {}", asyncCleanup);
 
         } catch (Exception e) {
             log.error("❌ Failed to initialize S3 client: {}", e.getMessage(), e);
@@ -103,20 +104,81 @@ public class S3CleanupService {
         }
     }
 
+    private boolean validateS3Configuration() {
+        boolean valid = true;
+
+        if (bucketName == null || bucketName.trim().isEmpty()) {
+            log.warn("⚠️ S3 bucket name not configured (app.aws.s3.bucket-name), S3 cleanup disabled");
+            valid = false;
+        }
+
+        if (accessKey == null || accessKey.trim().isEmpty()) {
+            log.warn("⚠️ S3 access key not configured (app.aws.s3.access-key), S3 cleanup disabled");
+            valid = false;
+        }
+
+        if (secretKey == null || secretKey.trim().isEmpty()) {
+            log.warn("⚠️ S3 secret key not configured (app.aws.s3.secret-key), S3 cleanup disabled");
+            valid = false;
+        }
+
+        return valid;
+    }
+
     private void testS3Connection() {
         try {
+            log.info("🔍 Testing S3 connection...");
+
+            // First try a simple service check
             HeadBucketRequest headBucketRequest = HeadBucketRequest.builder()
                 .bucket(bucketName)
                 .build();
 
             s3Client.headBucket(headBucketRequest);
-            log.debug("✅ S3 bucket '{}' is accessible", bucketName);
+            log.info("✅ S3 bucket '{}' is accessible", bucketName);
 
         } catch (NoSuchBucketException e) {
-            log.warn("⚠️ S3 bucket '{}' does not exist. Chunks cleanup will be skipped.", bucketName);
+            log.error("❌ S3 bucket '{}' does not exist", bucketName);
+            log.info("💡 To create the bucket manually:");
+            log.info("   docker-compose exec minio-mc mc mb local/{} --ignore-existing", bucketName);
             throw new RuntimeException("S3 bucket does not exist: " + bucketName, e);
+
+        } catch (S3Exception e) {
+            log.error("❌ S3 service error connecting to bucket '{}': {} (Status: {}, Code: {})",
+                     bucketName, e.getMessage(), e.statusCode(), e.awsErrorDetails().errorCode());
+
+            // Provide specific guidance for common errors
+            if (e.statusCode() == 400) {
+                log.error("💡 Status 400 usually indicates:");
+                log.error("   - Incorrect endpoint URL format");
+                log.error("   - Invalid credentials");
+                log.error("   - MinIO service not ready");
+                log.error("   - Network connectivity issues");
+
+                // Additional debugging info
+                log.error("🔍 Current configuration:");
+                log.error("   - Endpoint: {}", serviceEndpoint);
+                log.error("   - Bucket: {}", bucketName);
+                log.error("   - Region: {}", region);
+                log.error("   - Access Key: {}***", accessKey != null && accessKey.length() > 3 ? accessKey.substring(0, 3) : "null");
+            }
+
+            throw new RuntimeException("S3 connection test failed", e);
+
+        } catch (SdkException e) {
+            log.error("❌ AWS SDK error: {} ({})", e.getMessage(), e.getClass().getSimpleName());
+
+            if (e.getMessage().contains("UnknownHostException")) {
+                log.error("💡 Network issue: Cannot resolve hostname in endpoint URL");
+                log.error("   - Check if MinIO service is running: docker-compose ps minio");
+                log.error("   - Check endpoint URL: {}", serviceEndpoint);
+            }
+
+            throw new RuntimeException("S3 connection test failed", e);
+
         } catch (Exception e) {
-            log.error("❌ Failed to connect to S3 bucket '{}': {}", bucketName, e.getMessage());
+            log.error("❌ Unexpected error during S3 connection test: {} ({})",
+                     e.getMessage(), e.getClass().getSimpleName(), e);
             throw new RuntimeException("S3 connection test failed", e);
         }
     }
@@ -177,7 +239,7 @@ public class S3CleanupService {
 
                 if (objects.isEmpty()) {
                     if (batchCount == 0) {
-                        log.info("📭 No chunks found for session {} at s3://{}/{}",
+                        log.info("🔭 No chunks found for session {} at s3://{}/{}",
                                 sessionId, bucketName, chunkPrefix);
                     }
                     break;
@@ -229,7 +291,7 @@ public class S3CleanupService {
                 log.info("✅ S3 cleanup completed for session {}: {} objects deleted in {} batches",
                         sessionId, totalObjectsDeleted, batchCount);
             } else {
-                log.debug("📭 No chunks found to cleanup for session {}", sessionId);
+                log.debug("🔭 No chunks found to cleanup for session {}", sessionId);
             }
 
             // Optionally clean up empty directories (attempt to delete the folder itself)
@@ -268,7 +330,7 @@ public class S3CleanupService {
 
             } catch (NoSuchKeyException e) {
                 // Directory marker doesn't exist, that's fine
-                log.debug("📁 No directory marker to cleanup for: s3://{}/{}", bucketName, directoryMarker);
+                log.debug("🔍 No directory marker to cleanup for: s3://{}/{}", bucketName, directoryMarker);
             }
 
         } catch (Exception e) {
@@ -315,7 +377,7 @@ public class S3CleanupService {
 
         return String.format("S3 cleanup enabled - Bucket: %s, Endpoint: %s, Async: %s",
                            bucketName,
-                           serviceEndpoint != null ? serviceEndpoint : "default AWS S3",
+                           serviceEndpoint != null && !serviceEndpoint.trim().isEmpty() ? serviceEndpoint : "default AWS S3",
                            asyncCleanup);
     }
 

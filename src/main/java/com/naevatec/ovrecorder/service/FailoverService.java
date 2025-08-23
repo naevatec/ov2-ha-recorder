@@ -42,12 +42,12 @@ public class FailoverService {
 	@Value("${app.failover.heartbeat-max-lost:3}")
 	private long maxLostHeartbeats;
 
-	private final long heartbeatTimeoutSeconds = heartbeatTimeSeconds * maxLostHeartbeats;
+	private long heartbeatTimeoutSeconds;
 
     @Value("${app.failover.chunk.time:10}")
 	private long chunkTimeSeconds;
 
-    private final long stuckChunkTimeoutSeconds = chunkTimeSeconds * maxLostHeartbeats; // 3 times chunk duration
+    private long stuckChunkTimeoutSeconds;
 
     @Value("${app.failover.check-interval:60000}")
     private long checkIntervalMs;
@@ -94,11 +94,14 @@ public class FailoverService {
             log.info("Failover service is disabled");
             return;
         }
-
+		heartbeatTimeoutSeconds = heartbeatTimeSeconds * maxLostHeartbeats;
+		stuckChunkTimeoutSeconds = chunkTimeSeconds * maxLostHeartbeats; // 3 times chunk duration
         log.info("✅ Failover service initialized (Docker client will be created on first use)");
         log.info("Docker socket path: {}", dockerSocketPath);
         log.info("OpenVidu image: {}:{}", openviduRecordImage, imageTag);
         log.info("Docker network: {}", dockerNetwork);
+		log.info("Heartbeat timeout: {} seconds", heartbeatTimeoutSeconds);
+		log.info("Stuck chunk timeout: {} seconds", stuckChunkTimeoutSeconds);
     }
 
     /**
