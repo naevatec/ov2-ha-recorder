@@ -28,6 +28,7 @@ API_BASE="http://${HA_CONTROLLER_HOST}:${HA_CONTROLLER_PORT}/api/sessions"
 # Global variables
 UNIQUE_SESSION_ID=""
 LAST_CHUNK_SENT=""
+SESSION_ID_REDIS=""
 
 # Logging function
 log() {
@@ -38,6 +39,15 @@ log() {
 error_exit() {
     log "ERROR: $1"
     exit 1
+}
+
+# Get session ID for Redis key. Will be the variable VIDEO_ID if set, else the UNIQUE_SESSION_ID
+get_session_id() {
+    if [[ -n "${VIDEO_ID:-}" ]]; then
+        echo "$VIDEO_ID"
+    else
+        echo "$UNIQUE_SESSION_ID"
+    fi
 }
 
 # Parse recording information from JSON
@@ -101,7 +111,7 @@ send_heartbeat() {
         -H "Content-Type: application/json" \
         -H "User-Agent: recorder-session-manager/1.0" \
         -d "$heartbeat_data" \
-        "${API_BASE}/${UNIQUE_SESSION_ID}/heartbeat" 2>/dev/null || echo "000")
+        "${API_BASE}/${SESSION_ID_REDIS}/heartbeat" 2>/dev/null || echo "000")
     
     local http_code="${response: -3}"
     
@@ -136,15 +146,6 @@ heartbeat_loop() {
 # Cleanup function - fast unregistration
 cleanup() {
     log "Script terminating, unregistering session..."
-    if [[ -n "${UNIQUE_SESSION_ID}" ]]; then
-        # Quick DELETE call instead of status update
-        timeout 5 curl -s \
-            -u "${CONTROLLER_USER}:${CONTROLLER_PASSWORD}" \
-            -X DELETE \
-            "${API_BASE}/${UNIQUE_SESSION_ID}" \
-            >/dev/null 2>&1 || true
-        log "Session unregistered"
-    fi
     exit 0
 }
 
@@ -161,6 +162,10 @@ main() {
     
     # Parse JSON file
     parse_recording_info "$JSON_FILE"
+
+    # The session ID for Redis key
+    SESSION_ID_REDIS=$(get_session_id)
+    log "Session ID for Redis key: $SESSION_ID_REDIS"
     
     # Start heartbeat loop
     heartbeat_loop

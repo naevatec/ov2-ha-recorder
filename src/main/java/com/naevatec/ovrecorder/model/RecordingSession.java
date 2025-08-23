@@ -65,6 +65,15 @@ public class RecordingSession {
   @JsonProperty("backupContainerName")
   private String backupContainerName;
 
+  @JsonProperty("environment")
+  private String environment;
+
+  @JsonProperty("uniqueSessionId")
+  private String uniqueSessionId;
+
+  @JsonProperty("originalSessionId")
+  private String originalSessionId;
+
   // Custom constructor for backward compatibility
   public RecordingSession(String sessionId, String clientId, String clientHost) {
     this.sessionId = sessionId;

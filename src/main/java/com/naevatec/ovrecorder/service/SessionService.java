@@ -396,24 +396,24 @@ public class SessionService {
 
     try {
       // Get all active sessions
-      List<RecordingSession> sessions = sessionRepository.findAllActiveSessions();
+      List<RecordingSession> sessions = sessionRepository.findAllInactiveSessions();
 
       // Find inactive sessions
-      List<String> inactiveSessions = sessions.stream()
+      List<String> inactiveSessionIds = sessions.stream()
           .filter(session -> session.isInactive(maxInactiveTimeSeconds))
           .map(RecordingSession::getSessionId)
           .collect(Collectors.toList());
 
-      if (!inactiveSessions.isEmpty()) {
+      if (!inactiveSessionIds.isEmpty()) {
         // Mark sessions as inactive before removing
-        for (String sessionId : inactiveSessions) {
+        for (String sessionId : inactiveSessionIds) {
           updateSessionStatus(sessionId, RecordingSession.SessionStatus.INACTIVE);
         }
 
         // Remove inactive sessions with S3 cleanup
-        bulkRemoveSessionsWithS3Cleanup(inactiveSessions);
+        bulkRemoveSessionsWithS3Cleanup(inactiveSessionIds);
         log.info("🧹 Cleaned up {} inactive sessions with S3 chunks: {}",
-                inactiveSessions.size(), inactiveSessions);
+                inactiveSessionIds.size(), inactiveSessionIds);
       }
 
       // Clean up orphaned session IDs
@@ -459,7 +459,7 @@ public class SessionService {
     try {
       ObjectMapper objectMapper = new ObjectMapper();
       Map<String, Object> payloadObj = objectMapper.readValue(payload, new TypeReference<HashMap<String, Object>>() {});
-      String sessionId = (String) payloadObj.get("uniqueSessionId");
+      String sessionId = (String) payloadObj.get("id");
       String status = (String) payloadObj.get("status");
       if (sessionId != null && status != null) {
         if (status.equalsIgnoreCase("stopped")) {

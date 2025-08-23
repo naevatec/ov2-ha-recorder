@@ -200,6 +200,10 @@ public class S3CleanupService {
 
         // Extract base session ID (before underscore)
         String baseSessionId = extractBaseSessionId(sessionId);
+		// remove trailing slash if any from chunkFolder
+		String chunkFolder = this.chunkFolder != null ? this.chunkFolder.replaceAll("/+$", "") : "chunks";
+		// remove starting slash if any from chunkFolder
+		chunkFolder = chunkFolder.replaceAll("^/+", "");
         String chunkPrefix = baseSessionId + "/" + chunkFolder + "/";
 
         log.info("🧹 Starting S3 chunk cleanup for session: {} (base: {})", sessionId, baseSessionId);

@@ -29,22 +29,68 @@ public class SessionController {
     private final SessionService sessionService;
 
     /**
-     * Register a new recording session
+     * Register a new recording session - Enhanced version
      */
     @PostMapping
-    public ResponseEntity<?> registerSession(@RequestBody Map<String, String> requestBody) {
+    public ResponseEntity<?> registerSession(@RequestBody Map<String, Object> requestBody) {
         try {
-            String sessionId = requestBody.get("sessionId");
-            String clientId = requestBody.get("clientId");
-            String clientHost = requestBody.get("clientHost");
+            String sessionId = (String) requestBody.get("sessionId");
+            String clientId = (String) requestBody.get("clientId");
+            String clientHost = (String) requestBody.get("clientHost");
 
             if (sessionId == null || clientId == null) {
                 return ResponseEntity.badRequest()
                     .body(Map.of("error", "sessionId and clientId are required"));
             }
 
-            RecordingSession registeredSession = sessionService.createSession(sessionId, clientId, clientHost);
-            log.info("Session registered: {}", sessionId);
+            // Extract additional fields for enhanced registration
+            String uniqueSessionId = (String) requestBody.get("uniqueSessionId");
+            String originalSessionId = (String) requestBody.get("originalSessionId");
+            String statusStr = (String) requestBody.get("status");
+            Object recordingJson = requestBody.get("recordingJson");
+            Object environment = requestBody.get("environment");
+            Object metadata = requestBody.get("metadata");
+
+            // Create session with enhanced data
+            RecordingSession session = RecordingSession.builder()
+                .sessionId(sessionId)
+                .clientId(clientId)
+                .clientHost(clientHost)
+                .uniqueSessionId(uniqueSessionId)
+                .originalSessionId(originalSessionId)
+                .status(parseSessionStatus(statusStr))
+                .createdAt(LocalDateTime.now())
+                .lastHeartbeat(LocalDateTime.now())
+                .active(true)
+                .build();
+
+            // Set environment variables as JSON string if provided
+            if (environment != null) {
+                try {
+                    session.setEnvironment(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(environment));
+                } catch (Exception e) {
+                    log.warn("Failed to serialize environment variables: {}", e.getMessage());
+                }
+            }
+
+            // Set metadata (prefer metadata field, fallback to recordingJson)
+            if (metadata != null) {
+                try {
+                    session.setMetadata(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(metadata));
+                } catch (Exception e) {
+                    log.warn("Failed to serialize metadata: {}", e.getMessage());
+                }
+            } else if (recordingJson != null) {
+                try {
+                    session.setMetadata(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(recordingJson));
+                } catch (Exception e) {
+                    log.warn("Failed to serialize recordingJson as metadata: {}", e.getMessage());
+                }
+            }
+
+            RecordingSession registeredSession = sessionService.registerSession(session);
+            log.info("Session registered: {} (uniqueId: {}, originalId: {})",
+                sessionId, uniqueSessionId, originalSessionId);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(registeredSession);
         } catch (IllegalArgumentException e) {
@@ -54,6 +100,42 @@ public class SessionController {
             log.error("Error registering session", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Internal server error"));
+        }
+    }
+
+    /**
+     * Helper method to parse session status
+     */
+    private RecordingSession.SessionStatus parseSessionStatus(String statusStr) {
+        if (statusStr == null || statusStr.trim().isEmpty()) {
+            return RecordingSession.SessionStatus.STARTING;
+        }
+
+        try {
+            // Handle OpenVidu status mapping
+            switch (statusStr.toLowerCase()) {
+                case "started":
+                case "starting":
+                    return RecordingSession.SessionStatus.STARTING;
+                case "recording":
+                    return RecordingSession.SessionStatus.RECORDING;
+                case "stopped":
+                case "stopping":
+                    return RecordingSession.SessionStatus.STOPPING;
+                case "failed":
+                    return RecordingSession.SessionStatus.FAILED;
+                case "completed":
+                    return RecordingSession.SessionStatus.COMPLETED;
+                case "paused":
+                    return RecordingSession.SessionStatus.PAUSED;
+                case "inactive":
+                    return RecordingSession.SessionStatus.INACTIVE;
+                default:
+                    return RecordingSession.SessionStatus.valueOf(statusStr.toUpperCase());
+            }
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid status '{}', using STARTING", statusStr);
+            return RecordingSession.SessionStatus.STARTING;
         }
     }
 
@@ -251,14 +333,7 @@ public class SessionController {
                     .body(Map.of("error", "status field is required"));
             }
 
-            RecordingSession.SessionStatus status;
-            try {
-                status = RecordingSession.SessionStatus.valueOf(statusStr.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Invalid status: " + statusStr));
-            }
-
+            RecordingSession.SessionStatus status = parseSessionStatus(statusStr);
             boolean updated = sessionService.updateSessionStatus(sessionId, status);
 
             if (updated) {
