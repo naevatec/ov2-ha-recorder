@@ -22,9 +22,13 @@ import lombok.extern.slf4j.Slf4j;
 public class SessionService {
 
   private final SessionRepository sessionRepository;
+  private final S3CleanupService s3CleanupService; // NEW: S3 cleanup integration
 
   @Value("${app.session.max-inactive-time:600}")
   private long maxInactiveTimeSeconds;
+
+  @Value("${app.recording.storage:local}")
+  private String appRecordingStorage;
 
   /**
    * Create a new recording session
@@ -214,6 +218,7 @@ public class SessionService {
 
   /**
    * Mark session as inactive (soft delete)
+   * NOTE: This does NOT trigger S3 cleanup - chunks are kept for inactive sessions
    */
   public Optional<RecordingSession> markSessionInactive(String sessionId) {
     Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
@@ -229,7 +234,7 @@ public class SessionService {
     session.updateHeartbeat();
     sessionRepository.update(session);
 
-    log.info("Session marked as inactive: {}", sessionId);
+    log.info("Session marked as inactive: {} (chunks preserved)", sessionId);
     return Optional.of(session);
   }
 
@@ -280,6 +285,7 @@ public class SessionService {
 
   /**
    * Remove a session completely (hard delete)
+   * This triggers S3 chunk cleanup
    */
   public boolean removeSession(String sessionId) {
     if (!sessionRepository.exists(sessionId)) {
@@ -287,6 +293,23 @@ public class SessionService {
       return false;
     }
 
+    log.info("🗑️ Removing session: {} (with S3 chunk cleanup)", sessionId);
+
+    // Trigger S3 chunk cleanup BEFORE removing from Redis
+    try {
+      if (s3CleanupService.isS3CleanupAvailable() && appRecordingStorage.equalsIgnoreCase("s3")) {
+        log.debug("🧹 Triggering S3 chunk cleanup for session: {}", sessionId);
+        s3CleanupService.cleanupSessionChunks(sessionId);
+      } else {
+        log.debug("⚠️ S3 cleanup not available for session: {}", sessionId);
+      }
+    } catch (Exception e) {
+      log.error("❌ S3 cleanup failed for session {} (continuing with session removal): {}",
+               sessionId, e.getMessage(), e);
+      // Continue with session removal even if S3 cleanup fails
+    }
+
+    // Remove from Redis
     sessionRepository.deleteById(sessionId);
     log.info("Removed session: {}", sessionId);
     return true;
@@ -294,6 +317,7 @@ public class SessionService {
 
   /**
    * Deregister session (alias for removeSession for controller compatibility)
+   * This triggers S3 chunk cleanup
    */
   public boolean deregisterSession(String sessionId) {
     return removeSession(sessionId);
@@ -315,14 +339,51 @@ public class SessionService {
     List<String> oldInactiveSessions = allSessions.stream()
         .filter(session -> !session.isActive() && session.getLastHeartbeat().isBefore(threshold))
         .map(RecordingSession::getSessionId)
-        .collect(Collectors.toList());
+        .toList();
 
     if (!oldInactiveSessions.isEmpty()) {
-      sessionRepository.deleteAll(oldInactiveSessions);
-      log.info("Cleaned up {} old inactive sessions", oldInactiveSessions.size());
+      log.info("🧹 Cleaning up {} old inactive sessions with S3 chunks", oldInactiveSessions.size());
+
+      // Remove sessions one by one to trigger individual S3 cleanup
+      for (String sessionId : oldInactiveSessions) {
+        removeSession(sessionId); // This will trigger S3 cleanup for each session
+      }
+
+      log.info("✅ Cleaned up {} old inactive sessions", oldInactiveSessions.size());
     }
 
     return oldInactiveSessions.size();
+  }
+
+  /**
+   * Bulk remove sessions with S3 cleanup
+   * Used internally by cleanup operations
+   */
+  private void bulkRemoveSessionsWithS3Cleanup(List<String> sessionIds) {
+    if (sessionIds.isEmpty()) {
+      return;
+    }
+
+    log.info("🗑️ Bulk removing {} sessions with S3 cleanup", sessionIds.size());
+
+    // Trigger S3 cleanup for each session
+    if (s3CleanupService.isS3CleanupAvailable() && appRecordingStorage.equalsIgnoreCase("s3")) {
+      for (String sessionId : sessionIds) {
+        try {
+          s3CleanupService.cleanupSessionChunks(sessionId);
+        } catch (Exception e) {
+          log.error("❌ S3 cleanup failed for session {} during bulk removal: {}",
+                   sessionId, e.getMessage());
+          // Continue with other sessions
+        }
+      }
+    } else {
+		log.debug("⚠️ S3 cleanup not available - skipping S3 cleanup for bulk removal");
+	}
+
+    // Remove from Redis in batch
+    sessionRepository.deleteAll(sessionIds);
+    log.info("✅ Bulk removal completed for {} sessions", sessionIds.size());
   }
 
   /**
@@ -349,9 +410,10 @@ public class SessionService {
           updateSessionStatus(sessionId, RecordingSession.SessionStatus.INACTIVE);
         }
 
-        // Remove inactive sessions
-        sessionRepository.deleteAll(inactiveSessions);
-        log.info("Cleaned up {} inactive sessions: {}", inactiveSessions.size(), inactiveSessions);
+        // Remove inactive sessions with S3 cleanup
+        bulkRemoveSessionsWithS3Cleanup(inactiveSessions);
+        log.info("🧹 Cleaned up {} inactive sessions with S3 chunks: {}",
+                inactiveSessions.size(), inactiveSessions);
       }
 
       // Clean up orphaned session IDs
@@ -359,18 +421,19 @@ public class SessionService {
 
       // Log current status
       long activeCount = sessionRepository.getActiveSessionCount();
-      log.debug("Cleanup completed. Active sessions: {}", activeCount);
+      log.debug("✅ Cleanup completed. Active sessions: {}", activeCount);
 
     } catch (Exception e) {
-      log.error("Error during session cleanup: {}", e.getMessage(), e);
+      log.error("❌ Error during session cleanup: {}", e.getMessage(), e);
     }
   }
 
   /**
    * Manual cleanup trigger (can be called via REST endpoint)
+   * This will trigger S3 cleanup for removed sessions
    */
   public int manualCleanup() {
-    log.info("Manual cleanup triggered");
+    log.info("🔧 Manual cleanup triggered (with S3 chunk cleanup)");
 
     List<RecordingSession> sessions = sessionRepository.findAllActiveSessions();
     List<String> inactiveSessions = sessions.stream()
@@ -379,8 +442,8 @@ public class SessionService {
         .collect(Collectors.toList());
 
     if (!inactiveSessions.isEmpty()) {
-      sessionRepository.deleteAll(inactiveSessions);
-      log.info("Manual cleanup removed {} sessions", inactiveSessions.size());
+      bulkRemoveSessionsWithS3Cleanup(inactiveSessions);
+      log.info("✅ Manual cleanup removed {} sessions with S3 chunks", inactiveSessions.size());
     }
 
     sessionRepository.cleanupOrphanedSessions();
@@ -409,7 +472,13 @@ public class SessionService {
       }
     } catch (Exception e) {
       log.error("Failed to parse webhook payload: {}", e.getMessage());
-      return;
     }
+  }
+
+  /**
+   * Get S3 cleanup service information
+   */
+  public String getS3CleanupInfo() {
+    return s3CleanupService.getS3CleanupInfo();
   }
 }

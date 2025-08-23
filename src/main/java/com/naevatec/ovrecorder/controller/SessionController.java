@@ -381,7 +381,8 @@ public class SessionController {
                 "totalSessions", totalSessionCount,
                 "inactiveSessions", inactiveSessionCount,
                 "timestamp", LocalDateTime.now().toString(),
-                "service", "recorder-ha-controller"
+                "service", "recorder-ha-controller",
+                "s3CleanupInfo", sessionService.getS3CleanupInfo()
             );
 
             return ResponseEntity.ok(response);
@@ -392,7 +393,8 @@ public class SessionController {
                 "status", "unhealthy",
                 "error", e.getMessage(),
                 "timestamp", LocalDateTime.now().toString(),
-                "service", "recorder-ha-controller"
+                "service", "recorder-ha-controller",
+                "s3CleanupInfo", "unavailable"
             );
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
