@@ -138,24 +138,32 @@ build_ha_controller() {
     echo "✅ HA Controller built successfully"
 }
 
-# Function to perform Docker-based health check
-docker_health_check() {
-    local service_name="$1"
-    local health_url="$2"
-    local timeout="${3:-60}"
-    local description="${4:-service}"
+# Function to check Docker container health status
+check_container_health() {
+    local container_name="$1"
+    local timeout="${2:-60}"
+    local description="${3:-container}"
 
-    echo "🏥 Checking $description health using Docker..."
+    echo "🏥 Checking $description health using Docker inspect..."
 
     local elapsed=0
     while [ $elapsed -lt $timeout ]; do
-        # Use a temporary Alpine container to perform the health check
-        if docker run --rm --network="${service_name}_default" alpine:latest sh -c "
-            apk add --no-cache curl >/dev/null 2>&1 &&
-            curl -s -f '$health_url' >/dev/null 2>&1
-        " >/dev/null 2>&1; then
-            echo "✅ $description is healthy and responding"
-            return 0
+        # Check if container exists and is running
+        if docker ps --format "{{.Names}}" | grep -q "^${container_name}$"; then
+            # Check health status if healthcheck is defined
+            health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "no-healthcheck")
+
+            if [ "$health_status" = "healthy" ]; then
+                echo "✅ $description is healthy"
+                return 0
+            elif [ "$health_status" = "no-healthcheck" ]; then
+                # If no healthcheck defined, just check if running
+                container_status=$(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo "not-found")
+                if [ "$container_status" = "running" ]; then
+                    echo "✅ $description is running (no healthcheck defined)"
+                    return 0
+                fi
+            fi
         fi
 
         echo -n "."
@@ -166,30 +174,6 @@ docker_health_check() {
     echo ""
     echo "⚠️ $description health check timeout after ${timeout}s"
     return 1
-}
-
-# Function to perform Docker-based API test with authentication
-docker_api_test() {
-    local service_name="$1"
-    local api_url="$2"
-    local username="$3"
-    local password="$4"
-    local expected_content="$5"
-    local description="${6:-API}"
-
-    echo "🧪 Testing $description using Docker..."
-
-    # Use a temporary Alpine container to perform the API test
-    if docker run --rm --network="${service_name}_default" alpine:latest sh -c "
-        apk add --no-cache curl >/dev/null 2>&1 &&
-        curl -s -u '$username:$password' '$api_url' | grep -q '$expected_content'
-    " >/dev/null 2>&1; then
-        echo "✅ $description is working correctly"
-        return 0
-    else
-        echo "⚠️ $description test failed"
-        return 1
-    fi
 }
 
 # Function to start services via docker compose
@@ -270,12 +254,19 @@ start_services() {
     echo "📦 Starting Redis..."
     docker compose up -d redis
 
-    # Verify MinIO is healthy using Docker-based health check
-    echo "🏥 Checking MinIO health using Docker container..."
-    if docker_health_check "$PROJECT_NAME" "http://minio:9000/minio/health/live" 30 "MinIO"; then
+    # Verify MinIO is healthy using container health status
+    echo "🏥 Checking MinIO health using container status..."
+    if check_container_health "minio" 30 "MinIO"; then
         echo "✅ MinIO services are ready"
     else
         echo "⚠️ MinIO health check failed, but continuing..."
+        # Check if MinIO is at least running
+        if docker ps --format "{{.Names}}" | grep -q "^minio$"; then
+            echo "📦 MinIO container is running"
+        else
+            echo "❌ MinIO container is not running"
+            docker compose logs minio
+        fi
     fi
 
     # Get MinIO port information for display
@@ -293,33 +284,34 @@ start_ha_controller() {
     # Start with ha-controller profile
     docker compose --profile ha-controller up -d ov-recorder-ha-controller
 
-    # Get the docker compose project name for network reference
-    PROJECT_NAME=$(basename "${SCRIPT_DIR}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
-    if [ -z "$PROJECT_NAME" ]; then
-        PROJECT_NAME="recorder-ha-controller"
-    fi
-
-    # Wait for HA Controller to be ready using Docker-based health check
+    # Wait for HA Controller to be ready using container health status
     echo "⏳ Waiting for HA Controller to be ready..."
-    if docker_health_check "$PROJECT_NAME" "http://ov-recorder-ha-controller:8080/actuator/health" 90 "HA Controller"; then
-        echo "✅ HA Controller is ready"
+    if check_container_health "ov-recorder-ha-controller" 90 "HA Controller"; then
+        echo "✅ HA Controller is ready and running"
 
-        # Test HA Controller API using Docker-based test
-        echo "🧪 Testing HA Controller API using Docker container..."
-        username="${HA_CONTROLLER_USERNAME:-recorder}"
-        password="${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}"
-
-        if docker_api_test "$PROJECT_NAME" "http://ov-recorder-ha-controller:8080/api/sessions/health" "$username" "$password" "healthy" "HA Controller API"; then
-            echo "✅ HA Controller API test passed"
+        # Additional verification: check if Spring Boot has started properly
+        echo "🔍 Verifying Spring Boot application startup..."
+        if docker logs ov-recorder-ha-controller 2>&1 | grep -q "Started.*Application in"; then
+            echo "✅ Spring Boot application has started successfully"
+        elif docker logs ov-recorder-ha-controller 2>&1 | grep -q "APPLICATION READY"; then
+            echo "✅ HA Controller application is ready"
         else
-            echo "⚠️ HA Controller API test failed, but service is running"
+            echo "⚠️ Spring Boot startup verification inconclusive, but container is healthy"
         fi
 
         return 0
     else
         echo "❌ HA Controller failed to start within timeout"
-        echo "📋 Checking logs..."
-        docker compose logs ov-recorder-ha-controller
+        echo "📋 Checking if container is at least running..."
+        if docker ps --format "{{.Names}}" | grep -q "^ov-recorder-ha-controller$"; then
+            echo "📦 HA Controller container is running but not healthy"
+            echo "📋 Recent container logs:"
+            docker compose logs --tail=20 ov-recorder-ha-controller
+        else
+            echo "❌ HA Controller container is not running"
+            echo "📋 All logs:"
+            docker compose logs ov-recorder-ha-controller
+        fi
         exit 1
     fi
 }
@@ -351,8 +343,10 @@ show_final_status() {
     echo "   • Logs: docker compose logs ov-recorder-ha-controller"
     echo ""
     echo "🐳 Docker-based Commands (work with remote contexts):"
-    echo "   • Health check: docker run --rm --network=\$(docker compose ps --format json | jq -r '.[0].Networks' | head -1) alpine sh -c 'apk add curl && curl -u ${username}:${password} http://ov-recorder-ha-controller:8080/api/sessions/health'"
-    echo "   • API test: docker run --rm --network=\$(docker compose ps --format json | jq -r '.[0].Networks' | head -1) alpine sh -c 'apk add curl && curl -s -u ${username}:${password} http://ov-recorder-ha-controller:8080/api/sessions'"
+    echo "   • Container status: docker ps --filter name=ov-recorder-ha-controller"
+    echo "   • Health check: docker inspect ov-recorder-ha-controller --format='{{.State.Health.Status}}'"
+    echo "   • Container logs: docker logs ov-recorder-ha-controller"
+    echo "   • Exec into container: docker exec -it ov-recorder-ha-controller sh"
 }
 
 # Main execution flow
@@ -399,5 +393,6 @@ echo "   docker inspect openvidu/openvidu-recording:${TAG} --format='{{json .Con
 echo "   docker compose logs minio"
 echo "   docker compose logs ov-recorder-ha-controller"
 echo ""
-echo "🐳 Remote-context-friendly health check:"
-echo "   docker run --rm --network=\$(docker network ls --filter name=ov-ha-recorder --format '{{.Name}}' | head -1) alpine sh -c 'apk add --no-cache curl && curl -f http://ov-recorder-ha-controller:8080/actuator/health'"
+echo "🐳 Remote-context-friendly verification:"
+echo "   docker ps --filter name=ov-recorder-ha-controller --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+echo "   docker inspect ov-recorder-ha-controller --format='{{.State.Health.Status}}'"

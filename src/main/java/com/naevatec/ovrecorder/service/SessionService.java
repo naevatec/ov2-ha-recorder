@@ -378,7 +378,8 @@ public class SessionService {
         }
       }
     } else {
-		log.debug("⚠️ S3 cleanup not available - skipping S3 cleanup for bulk removal");
+		log.debug("⚠️ S3 cleanup not available - skipping S3 cleanup for bulk removal. S3CCleanupAvailable: {}, appRecordingStorage: {}",
+			s3CleanupService.isS3CleanupAvailable(), appRecordingStorage);
 	}
 
     // Remove from Redis in batch
@@ -463,11 +464,20 @@ public class SessionService {
       String status = (String) payloadObj.get("status");
       if (sessionId != null && status != null) {
         if (status.equalsIgnoreCase("stopped")) {
-			boolean didStop = updateSessionStatus(sessionId, RecordingSession.SessionStatus.STOPPING);
-			if (didStop)
-				log.info("Session {} marked as STOPPING due to webhook status: {}", sessionId, status);
-			else
-				log.warn("Failed to mark session {} as STOPPING - session not found", sessionId);
+			Optional<RecordingSession> sessionOpt = sessionRepository.findById(sessionId);
+
+			if (sessionOpt.isEmpty()) {
+			  log.warn("Attempted to update status for non-existent session: {}", sessionId);
+			}
+
+			RecordingSession session = sessionOpt.get();
+			session.setActive(false);
+			session.updateHeartbeat(); // Update heartbeat when status changes
+			sessionRepository.update(session);
+			log.info("Session {} marked as STOPPING due to webhook status: {}", sessionId, status);
+			if(session.getBackupContainerId() != null) {
+				// TODO: WE HAVE TO STOP THE CONTAINER USING THE ECHO Q TRICK
+			}
 		}
       }
     } catch (Exception e) {
