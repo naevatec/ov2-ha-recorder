@@ -127,8 +127,8 @@ wait_for_minio_setup() {
 start_minio_services() {
     print_step "Starting MinIO services..."
     
-    # Export TAG for docker compose
-    export TAG="${TAG:-latest}"
+    # Export IMAGE_TAG for docker compose
+    export IMAGE_TAG="${IMAGE_TAG:-latest}"
     
     # Start MinIO services first
     print_info "Starting MinIO and setup containers..."
@@ -319,7 +319,7 @@ replace_openvidu_image() {
     
     # Image configuration variables
     IMAGE_NAME="openvidu/openvidu-recording"
-    FULL_IMAGE_NAME="${IMAGE_NAME}:${TAG}"
+    FULL_IMAGE_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
     OLD_MAINTAINER="OpenVidu info@openvidu.io"
     NEW_MAINTAINER="NaevaTec-OpenVidu eiglesia@openvidu.io"
     
@@ -351,7 +351,8 @@ replace_openvidu_image() {
     
     # Build new image
     print_info "Building new image with docker compose: ${FULL_IMAGE_NAME}"
-    export TAG="$TAG"
+    export IMAGE_TAG="$TAG"
+    export IMAGE_NAME="$IMAGE_NAME"
     docker compose build openvidu-recording
     
     # Verify the new image has correct label

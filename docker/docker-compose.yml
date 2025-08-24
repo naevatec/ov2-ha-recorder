@@ -100,8 +100,8 @@ services:
       - APP_FAILOVER_STUCK_CHUNK_TIMEOUT=${HA_FAILOVER_STUCK_CHUNK_TIMEOUT:-60} # 1 minute
 
       # Docker Configuration for Failover (OPTIMIZED)
-      - APP_DOCKER_OPENVIDU_IMAGE=openvidu/openvidu-record
-      - APP_DOCKER_IMAGE_TAG=${OPENVIDU_VERSION:-2.31.0}
+      - OPENVIDU_RECORDING_DOCKER_IMAGE_NAME=${IMAGE_NAME:-openvidu/openvidu-recording}
+      - OPENVIDU_RECORDING_DOCKER_IMAGE_TAG=${IMAGE_TAG:-2.31.0}
       - APP_DOCKER_NETWORK=recorder-ha-controller_default
       - APP_DOCKER_SOCKET_PATH=/var/run/docker.sock
       - APP_FAILOVER_BACKUP_CONTAINER_PREFIX=backup-recorder
@@ -155,9 +155,10 @@ services:
     restart: unless-stopped
     networks:
       - ov-ha-recorder
+    user: "0:0"  # <-- NEW: Run as root to access Docker socket
     volumes:
       - ./data/controller/logs:/app/logs
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker socket for failover
+      - /var/run/docker.sock:/var/run/docker.sock:rw  # Docker socket for failover
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/sessions/health"]
       interval: 30s
@@ -173,9 +174,9 @@ services:
       context: ./recorder
       dockerfile: Dockerfile
       args:
-        - TAG=${TAG:-latest}
-    image: openvidu/openvidu-recording:${TAG:-latest}
-    container_name: openvidu-recording-${TAG:-latest}
+        - IMAGE_TAG=${IMAGE_TAG:-latest}
+    image: ${IMAGE_NAME:-openvidu/openvidu-recording}:${IMAGE_TAG:-latest}
+    container_name: openvidu-recording-${IMAGE_TAG:-latest}
     depends_on:
       - minio-mc
       - ov-recorder-ha-controller

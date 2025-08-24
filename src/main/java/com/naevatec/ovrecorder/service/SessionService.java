@@ -393,7 +393,7 @@ public class SessionService {
    */
   @Scheduled(fixedDelayString = "#{${app.session.cleanup-interval:30} * 1000}")
   public void cleanupInactiveSessions() {
-    log.debug("Starting cleanup of inactive sessions...");
+    log.debug("🔍 Starting cleanup of inactive sessions...");
 
     try {
       // Get all active sessions
@@ -422,7 +422,7 @@ public class SessionService {
 
       // Log current status
       long activeCount = sessionRepository.getActiveSessionCount();
-      log.debug("✅ Cleanup completed. Active sessions: {}", activeCount);
+      log.debug("✅ Cleanup completed. Inactive sessions: {}", activeCount);
 
     } catch (Exception e) {
       log.error("❌ Error during session cleanup: {}", e.getMessage(), e);

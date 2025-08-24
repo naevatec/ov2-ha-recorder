@@ -52,10 +52,10 @@ public class FailoverService {
     @Value("${app.failover.check-interval:60000}")
     private long checkIntervalMs;
 
-    @Value("${app.docker.openvidu-image:openvidu/openvidu-record}")
+    @Value("${app.docker.image.name:openvidu/openvidu-record}")
     private String openviduRecordImage;
 
-    @Value("${app.docker.image-tag:2.31.0}")
+    @Value("${app.docker.image.tag:2.31.0}")
     private String imageTag;
 
     @Value("${app.docker.network:bridge}")
@@ -96,12 +96,12 @@ public class FailoverService {
         }
 		heartbeatTimeoutSeconds = heartbeatTimeSeconds * maxLostHeartbeats;
 		stuckChunkTimeoutSeconds = chunkTimeSeconds * maxLostHeartbeats; // 3 times chunk duration
-        log.info("✅ Failover service initialized (Docker client will be created on first use)");
-        log.info("Docker socket path: {}", dockerSocketPath);
-        log.info("OpenVidu image: {}:{}", openviduRecordImage, imageTag);
-        log.info("Docker network: {}", dockerNetwork);
-		log.info("Heartbeat timeout: {} seconds", heartbeatTimeoutSeconds);
-		log.info("Stuck chunk timeout: {} seconds", stuckChunkTimeoutSeconds);
+        log.info("🔗 Failover service initialized (Docker client will be created on first use)");
+        log.info("   🐳 Docker socket path: {}", dockerSocketPath);
+        log.info("   \uD83D\uDCF8 OpenVidu image: {}:{}", openviduRecordImage, imageTag);
+        log.info("   \uD83D\uDEDC Docker network: {}", dockerNetwork);
+		log.info("   \uD83D\uDC93 Heartbeat timeout: {} seconds", heartbeatTimeoutSeconds);
+		log.info("   \uD83D\uDE35 Stuck chunk timeout: {} seconds", stuckChunkTimeoutSeconds);
     }
 
     /**
@@ -123,10 +123,16 @@ public class FailoverService {
         try {
             log.info("🐳 Lazy initializing Docker client with HttpClient5 transport...");
 
-            // Use Docker context configuration (respects remote contexts)
-            DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
-                // Don't specify dockerHost - let it use the current Docker context
-                .build();
+			// Build Docker client configuration with explicit socket path
+			DefaultDockerClientConfig.Builder configBuilder = DefaultDockerClientConfig.createDefaultConfigBuilder();
+
+			// Always use the mounted Docker socket when running in container
+			String dockerHost = "unix://" + dockerSocketPath;
+			log.info("🔗 Using Docker socket: {}", dockerHost);
+
+			DefaultDockerClientConfig config = configBuilder
+				.withDockerHost(dockerHost)  // <-- NEW: Explicit docker host
+				.build();
 
             ApacheDockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()
                 .dockerHost(config.getDockerHost())
@@ -141,6 +147,7 @@ public class FailoverService {
                 .build();
 
             // Test connection
+	        log.info("🧪 Testing Docker connection...");  // <-- NEW: Better logging
             dockerClient.pingCmd().exec();
             log.info("✅ Successfully connected to Docker daemon with HttpClient5");
 
@@ -163,7 +170,26 @@ public class FailoverService {
             return dockerClient;
 
         } catch (Exception e) {
-            log.error("❌ Failed to initialize Docker client: {}", e.getMessage(), e);
+			log.error("❌ Failed to initialize Docker client: {}", e.getMessage(), e);
+
+			// NEW: Additional debugging information
+			log.error("🔍 Docker client debug info:");
+			log.error("   - Docker socket path: {}", dockerSocketPath);
+			log.error("   - File exists: {}", java.nio.file.Files.exists(java.nio.file.Paths.get(dockerSocketPath)));
+			log.error("   - File readable: {}", java.nio.file.Files.isReadable(java.nio.file.Paths.get(dockerSocketPath)));
+
+			// Check if docker.sock is mounted correctly
+			try {
+				java.nio.file.Path socketPath = java.nio.file.Paths.get(dockerSocketPath);
+				if (java.nio.file.Files.exists(socketPath)) {
+					log.error("   - Socket permissions: {}", java.nio.file.Files.getPosixFilePermissions(socketPath));
+				} else {
+					log.error("   - Socket file does not exist - check Docker socket mount in docker-compose.yml");
+				}
+			} catch (Exception permException) {
+				log.error("   - Cannot check socket permissions: {}", permException.getMessage());
+			}
+
             dockerInitializationFailed = true;
             throw new RuntimeException("Cannot initialize Docker client for failover service", e);
         }
@@ -202,6 +228,16 @@ public class FailoverService {
 			log.debug("⚠️ Failover service is disabled");
             return;
         }
+
+		if (dockerClient == null) {
+			log.info("🔗 Docker client not initialized yet, initializing now...");
+			try {
+				getDockerClient();
+			} catch (Exception e) {
+				log.warn("⚠️ Docker client initialization failed, skipping this failover check: {}", e.getMessage());
+				return;
+			}
+		}
 
         log.debug("🔍 Starting failover detection scan...");
 
@@ -339,7 +375,6 @@ public class FailoverService {
             CreateContainerResponse container = client.createContainerCmd(openviduRecordImage + ":" + imageTag)
                 .withName(containerName)
                 .withEnv(envVars.toArray(new String[0]))
-                .withNetworkMode(dockerNetwork)
                 .withHostConfig(HostConfig.newHostConfig()
                     .withAutoRemove(false)  // Don't auto-remove for debugging
                     .withRestartPolicy(RestartPolicy.noRestart())

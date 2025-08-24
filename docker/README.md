@@ -105,7 +105,7 @@ HA_SESSION_CLEANUP_INTERVAL=30000   # Session review frequency in milliseconds
 HA_SESSION_MAX_INACTIVE_TIME=600    # Max time before session cleanup
 
 # Docker Configuration
-TAG=2.31.0                          # OpenVidu image tag
+IMAGE_TAG=2.31.0                          # OpenVidu image tag
 
 # Swagger Configuration (Profile-based)
 SPRING_PROFILES_ACTIVE=dev          # 'dev', 'test', or 'prod'
@@ -132,7 +132,7 @@ The project uses Docker Compose v2 with the following services:
 | `minio-mc`                  | `minio-mc`                  | MinIO setup and bucket creation | `ov-ha-recorder` | None                 |
 | `redis`                     | `ov-recorder-redis`         | Session data storage            | `ov-ha-recorder` | None (internal)      |
 | `ov-recorder-ha-controller` | `ov-recorder-ha-controller` | Session management API          | `ov-ha-recorder` | :8080 (configurable) |
-| `openvidu-recording`        | `openvidu-recording-{TAG}`  | Custom recording image          | `ov-ha-recorder` | None                 |
+| `openvidu-recording`        | `openvidu-recording-{IMAGE_TAG}`  | Custom recording image          | `ov-ha-recorder` | None                 |
 
 ### Service Control
 
@@ -186,7 +186,7 @@ The project uses Docker Compose v2 with the following services:
 
 #### Main Deployment Script
 
-**`./replace-openvidu-image.sh <TAG>`**
+**`./replace-openvidu-image.sh <IMAGE_TAG>`**
 
 Complete deployment workflow with HA Controller integration:
 1. ✅ Validates environment configuration including HA Controller settings
@@ -227,7 +227,7 @@ Comprehensive environment validation including HA Controller settings:
 
 #### Development Helper
 
-**`./manage-environment.sh [command] [TAG]`**
+**`./manage-environment.sh [command] [IMAGE_TAG]`**
 
 Development and testing utilities with full HA Controller support:
 
@@ -827,9 +827,9 @@ The build process automatically:
 
 ### Image Versioning
 
-Images are tagged using the `TAG` environment variable:
+Images are tagged using the `IMAGE_TAG` environment variable:
 - **HA Controller**: Uses project version from `pom.xml`
-- **OpenVidu Recording**: Uses `TAG` environment variable
+- **OpenVidu Recording**: Uses `IMAGE_TAG` environment variable
 - **Development**: Use version-specific tags (e.g., `2.31.0`)
 - **Testing**: Can use `latest` for rapid iteration
 - **Production**: Always use specific version tags

@@ -2,21 +2,21 @@
 
 # Script to replace OpenVidu recording image with custom NaevaTec version
 # This script integrates environment validation and HA Controller management
-# Usage: ./replace-openvidu-image.sh <TAG>
+# Usage: ./replace-openvidu-image.sh <IMAGE_TAG>
 
 set -e
 
-# Check if TAG is provided
+# Check if IMAGE_TAG is provided
 if [ $# -ne 1 ]; then
-    echo "Usage: $0 <TAG>"
+    echo "Usage: $0 <IMAGE_TAG>"
     echo "Example: $0 2.29.0"
     exit 1
 fi
 
-TAG="$1"
+IMAGE_TAG="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "🎬 Starting OpenVidu image replacement process for tag: ${TAG}"
+echo "🎬 Starting OpenVidu image replacement process for tag: ${IMAGE_TAG}"
 echo "📡 HA Controller integration: ENABLED (always included)"
 
 # Function to validate environment using the dedicated validation script
@@ -64,7 +64,7 @@ replace_openvidu_image() {
     
     # Image configuration variables
     IMAGE_NAME="openvidu/openvidu-recording"
-    FULL_IMAGE_NAME="${IMAGE_NAME}:${TAG}"
+    FULL_IMAGE_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
     OLD_MAINTAINER="OpenVidu info@openvidu.io"
     NEW_MAINTAINER="NaevaTec-OpenVidu eiglesia@openvidu.io"
     
@@ -101,8 +101,8 @@ replace_openvidu_image() {
     build_new_image_with_compose() {
         echo "🔨 Building new image with docker compose: ${FULL_IMAGE_NAME}"
         
-        # Export TAG for docker compose
-        export TAG="$TAG"
+        # Export IMAGE_TAG for docker compose
+        export IMAGE_TAG="$TAG"
         
         # Build using docker compose
         docker compose build openvidu-recording
@@ -186,8 +186,8 @@ start_services() {
         exit 1
     fi
 
-    # Export TAG for docker compose
-    export TAG="$TAG"
+    # Export IMAGE_TAG for docker compose
+    export IMAGE_TAG="$TAG"
 
     # Get the docker compose project name for network reference
     PROJECT_NAME=$(basename "${SCRIPT_DIR}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
@@ -324,10 +324,10 @@ show_final_status() {
     docker compose ps
     echo ""
     echo "📦 OpenVidu Recording Image:"
-    docker images "openvidu/openvidu-recording:${TAG}" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"
+    docker images "${IMAGE_NAME}:${IMAGE_TAG}" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"
     echo ""
     echo "🏷️ Image labels:"
-    docker inspect "openvidu/openvidu-recording:${TAG}" --format='{{range $key, $value := .Config.Labels}}{{$key}}: {{$value}}{{"\n"}}{{end}}' | sort
+    docker inspect "${IMAGE_NAME}:${IMAGE_TAG}" --format='{{range $key, $value := .Config.Labels}}{{$key}}: {{$value}}{{"\n"}}{{end}}' | sort
 
     echo ""
     echo "📡 HA Controller Status:"
@@ -378,7 +378,7 @@ main() {
     echo ""
     echo "🎉 Process completed successfully!"
     echo "💡 Services are running. Use 'docker compose down' to stop when done."
-    echo "📸 Image ready: openvidu/openvidu-recording:${TAG}"
+    echo "📸 Image ready: ${IMAGE_NAME}:${IMAGE_TAG}"
     echo "📡 HA Controller ready: http://localhost:${HA_CONTROLLER_PORT:-8080}"
     echo ""
     echo "🔧 Note: Health checks now use Docker containers, compatible with remote contexts!"
@@ -389,7 +389,7 @@ main
 
 echo ""
 echo "📋 Additional verification commands:"
-echo "   docker inspect openvidu/openvidu-recording:${TAG} --format='{{json .Config.Labels}}' | jq"
+echo "   docker inspect ${IMAGE_NAME}:${IMAGE_TAG} --format='{{json .Config.Labels}}' | jq"
 echo "   docker compose logs minio"
 echo "   docker compose logs ov-recorder-ha-controller"
 echo ""

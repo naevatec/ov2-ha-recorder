@@ -2,14 +2,14 @@
 
 # Development helper script for OpenVidu HA Recorder environment with HA Controller
 # Complements the main replace-openvidu-image.sh workflow
-# Usage: ./manage-environment.sh [command] [TAG]
+# Usage: ./manage-environment.sh [command] [IMAGE_TAG]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-TAG="${2:-2.31.0}"
+IMAGE_TAG="${2:-2.31.0}"
 
 # Load shared functions
 if [ -f "${SCRIPT_DIR}/shared-functions.sh" ]; then
@@ -21,7 +21,7 @@ else
 fi
 
 show_usage() {
-    echo "Usage: $0 [command] [TAG]"
+    echo "Usage: $0 [command] [IMAGE_TAG]"
     echo ""
     echo "Development helper commands:"
     echo "  start        - Start MinIO and HA Controller services"
@@ -33,7 +33,7 @@ show_usage() {
     echo "  test-recorder - Full S3 recording test (20 seconds)"
     echo "  test-ha      - Test HA Controller API"
     echo ""
-    echo "TAG: Docker image tag to use (default: 2.31.0)"
+    echo "IMAGE_TAG: Docker image tag to use (default: 2.31.0)"
     echo ""
     echo "Examples:"
     echo "  $0 start             # Start MinIO + HA Controller"
@@ -47,14 +47,14 @@ show_usage() {
 
 start_environment() {
     print_header "OV Recorder Development Environment"
-    print_info "Starting environment (TAG: $TAG)"
+    print_info "Starting environment (IMAGE_TAG: $IMAGE_TAG)"
     print_info "HA Controller: ENABLED (always included)"
     
     validate_environment
     create_directories
     
-    # Export TAG for docker-compose
-    export TAG="$TAG"
+    # Export IMAGE_TAG for docker-compose
+    export IMAGE_TAG="$IMAGE_TAG"
     
     # Start MinIO services
     start_minio_services
@@ -64,7 +64,7 @@ start_environment() {
     
     print_success "Environment is ready"
     print_info "To build and deploy the OpenVidu image, run:"
-    print_info "   ./replace-openvidu-image.sh $TAG"
+    print_info "   ./replace-openvidu-image.sh $IMAGE_TAG"
 }
 
 stop_environment() {
@@ -86,8 +86,8 @@ show_status() {
     
     echo ""
     print_info "OpenVidu Recording Images:"
-    if docker images "openvidu/openvidu-recording" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}" | tail -n +2 | grep -q "openvidu"; then
-        docker images "openvidu/openvidu-recording" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"
+    if docker images "${IMAGE_NAME}" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}" | tail -n +2 | grep -q "openvidu"; then
+        docker images "${IMAGE_NAME}" --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}"
     else
         echo "   No OpenVidu recording images found"
     fi
@@ -105,7 +105,7 @@ show_status() {
     if [ -f ".env" ]; then
         echo "   ✅ .env file exists"
         if command -v grep >/dev/null 2>&1; then
-            echo "   TAG: $(grep '^TAG=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
+            echo "   IMAGE_TAG: $(grep '^IMAGE_TAG=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
             echo "   HA_AWS_S3_SERVICE_ENDPOINT: $(grep '^HA_AWS_S3_SERVICE_ENDPOINT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
             echo "   HA_CONTROLLER_PORT: $(grep '^HA_CONTROLLER_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
             echo "   MINIO_API_PORT: $(grep '^MINIO_API_PORT=' .env 2>/dev/null | cut -d'=' -f2 || echo 'not set')"
@@ -173,7 +173,7 @@ clean_environment() {
     docker compose down -v --remove-orphans
     
     # Remove OpenVidu recording images for the specified tag
-    IMAGE_NAME="openvidu/openvidu-recording:$TAG"
+    IMAGE_NAME="$IMAGE_NAME:$IMAGE_TAG"
     if docker images "$IMAGE_NAME" --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
         print_info "Removing image: $IMAGE_NAME"
         docker rmi "$IMAGE_NAME" || true
@@ -197,9 +197,9 @@ clean_environment() {
 }
 
 test_container() {
-    print_step "Testing OpenVidu recording container (TAG: $TAG)..."
+    print_step "Testing OpenVidu recording container (IMAGE_TAG: $IMAGE_TAG)..."
     
-    IMAGE_NAME="openvidu/openvidu-recording:$TAG"
+    IMAGE_NAME_FULL="openvidu/openvidu-recording:$TAG"
     
     # Check if image exists
     if ! docker images "$IMAGE_NAME" --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
@@ -208,8 +208,8 @@ test_container() {
         exit 1
     fi
     
-    # Export TAG for docker compose
-    export TAG="$TAG"
+    # Export IMAGE_TAG for docker compose
+    export IMAGE_TAG="$TAG"
     
     print_info "Testing container basic functionality..."
     docker compose run --rm openvidu-recording /bin/bash -c "
@@ -244,18 +244,18 @@ test_container() {
 }
 
 test_recorder() {
-    print_step "Full S3 Recording Test (TAG: $TAG)"
+    print_step "Full S3 Recording Test (IMAGE_TAG: $TAG)"
     echo "This will test a complete 20-second recording workflow with S3 storage"
     echo ""
     
     # Validate environment first
     validate_environment
     
-    IMAGE_NAME="openvidu/openvidu-recording:$TAG"
+    IMAGE_NAME_FULL="openvidu/openvidu-recording:$TAG"
     
     # Check if image exists
-    if ! docker images "$IMAGE_NAME" --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
-        print_error "Image $IMAGE_NAME not found"
+    if ! docker images "$IMAGE_NAME_FULL" --format "{{.Repository}}:{{.Tag}}" | grep -q "$IMAGE_NAME"; then
+        print_error "Image $IMAGE_NAME_FULL not found"
         print_info "Build it first with: ./replace-openvidu-image.sh $TAG"
         exit 1
     fi
@@ -267,7 +267,7 @@ test_recorder() {
     fi
     
     # Export environment for docker compose
-    export TAG="$TAG"
+    export IMAGE_TAG="$TAG"
     export HA_RECORDING_STORAGE="s3"
     
     print_info "Starting recording test with S3 storage..."

@@ -1,24 +1,24 @@
 #!/bin/bash
 
 # Standalone script to replace OpenVidu recording image with custom NaevaTec version
-# Usage: ./replace-openvidu-image-standalone.sh <TAG>
+# Usage: ./replace-openvidu-image-standalone.sh <IMAGE_TAG>
 
 set -e
 
-# Check if TAG is provided
+# Check if IMAGE_TAG is provided
 if [ $# -ne 1 ]; then
-    echo "Usage: $0 <TAG>"
+    echo "Usage: $0 <IMAGE_TAG>"
     echo "Example: $0 2.29.0"
     exit 1
 fi
 
-TAG="$1"
+IMAGE_TAG="$1"
 IMAGE_NAME="openvidu/openvidu-recording"
-FULL_IMAGE_NAME="${IMAGE_NAME}:${TAG}"
+FULL_IMAGE_NAME="${IMAGE_NAME}:${IMAGE_TAG}"
 OLD_MAINTAINER="OpenVidu info@openvidu.io"
 NEW_MAINTAINER="NaevaTec-OpenVidu eiglesia@openvidu.io"
 
-echo "🎬 Starting OpenVidu image replacement process for tag: ${TAG}"
+echo "🎬 Starting OpenVidu image replacement process for tag: ${IMAGE_TAG}"
 echo "📁 Working directory: $(pwd)"
 
 # Function to check if image exists with specific maintainer label
@@ -73,8 +73,8 @@ build_new_image() {
         exit 1
     fi
 
-    # Export TAG for docker compose
-    export TAG="$TAG"
+    # Export IMAGE_TAG for docker compose
+    export IMAGE_TAG="$TAG"
 
     # Build the image using docker-compose (matches your working script)
     echo "🐳 Building with docker-compose..."
@@ -164,7 +164,7 @@ main() {
     echo "💡 Your new image ${FULL_IMAGE_NAME} is ready to use"
     echo ""
     echo "🚀 To start the full environment, use:"
-    echo "   ./replace-openvidu-image.sh ${TAG}"
+    echo "   ./replace-openvidu-image.sh ${IMAGE_TAG}"
 }
 
 # Execute main function

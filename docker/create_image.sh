@@ -1,6 +1,6 @@
 #!/bin/bash -x
 
-TAG=$1
+IMAGE_TAG=$1
 
 if [[ -n $TAG ]]; then
     docker build --rm --pull --no-cache -t "naevatec/ov2-ha-recorder:$TAG" .

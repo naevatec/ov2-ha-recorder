@@ -216,7 +216,7 @@ HA_CONTROLLER_USERNAME=recorder
 HA_CONTROLLER_PASSWORD=rec0rd3r_2024!
 
 # OpenVidu version
-TAG=2.31.0
+IMAGE_TAG=2.31.0
 ```
 
 ### 3. **Deploy Everything**
@@ -406,7 +406,7 @@ SPRINGDOC_API_DOCS_ENABLED=true      # Enable OpenAPI docs
 SPRINGDOC_SWAGGER_UI_ENABLED=true    # Enable Swagger UI (disabled in prod)
 
 # Docker Image Versioning
-TAG=2.31.0                           # OpenVidu image tag
+IMAGE_TAG=2.31.0                           # OpenVidu image tag
 ```
 
 ### Configuration Validation
@@ -443,7 +443,7 @@ The HA Controller supports environment-specific profiles:
 
 #### **Main Deployment Script**
 
-**`./replace-openvidu-image.sh <TAG>`**
+**`./replace-openvidu-image.sh <IMAGE_TAG>`**
 
 Complete deployment workflow for initial setup or updates:
 
@@ -466,7 +466,7 @@ Complete deployment workflow for initial setup or updates:
 
 #### **Environment Management Script**
 
-**`./manage-environment.sh [command] [TAG]`**
+**`./manage-environment.sh [command] [IMAGE_TAG]`**
 
 Development and operational management:
 
@@ -1031,7 +1031,7 @@ curl http://localhost:8080/openvidu/webhook/status | jq '.successRate'
 ./manage-environment.sh start
 
 # 2. Start a test recording container
-export TAG=2.31.0
+export IMAGE_TAG=2.31.0
 docker-compose --profile test up -d openvidu-recording
 
 # 3. Monitor session registration
