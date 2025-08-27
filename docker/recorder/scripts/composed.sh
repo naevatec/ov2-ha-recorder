@@ -186,14 +186,24 @@ EOF
 
   ### Evaluate chunk configuration ###
   # Get next index to use
-  result=$(cd "$CHUNK_RECORDING_DIR" && echo $(ls ????.mp4 2>/dev/null || echo "$CHUNK_START") | sed 's/\w+.mp4//g' | sed 's/.mp4//g' | awk '{print $NF}' | sed 's/^0*//g')
+  if ls "$CHUNK_RECORDING_DIR"/*.mp4 1> /dev/null 2>&1; then
+      # MP4 files exist, find the highest numbered one
+      result=$(cd "$CHUNK_RECORDING_DIR" && ls ????.mp4 2>/dev/null | sed 's/\.mp4$//' | sort -n | tail -1 | sed 's/^0*//')
+      log_info "Found existing chunks, highest: $result"
+  else
+      # No MP4 files, use CHUNK_START
+      result=$(echo "$CHUNK_START" | sed 's/^0*//')
+      log_info "No existing chunks, using CHUNK_START: $CHUNK_START -> $result"
+  fi
+
   # Check if the result is empty
   if [[ -z "$result" ]]; then
       log_info "Result is empty. Setting default value to 0."
       result=0
   fi
+
   INDEX=$(printf %04d $(( 1 + $result)) )
-  log_info "📊 Starting chunk index: $INDEX"
+  log_info "Starting chunk index: $INDEX"
 
   # Create a non empty file to avoid OpenVidu to stop the recording
   echo "Recording by chunks" > /recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT
@@ -324,7 +334,7 @@ EOF
       # Check local directory
       log_info "📋 Checking local chunk directory..."
       if [ -d "$CHUNK_RECORDING_DIR" ]; then
-        local local_chunks=$(find "$CHUNK_RECORDING_DIR" -name "*.mp4" -type f | wc -l)
+        local_chunks=$(find "$CHUNK_RECORDING_DIR" -name "*.mp4" -type f | wc -l)
         log_info "Found $local_chunks local chunks"
         if [ $local_chunks -gt 0 ]; then
           log_info "Local chunks found, continuing with available chunks"
@@ -355,8 +365,7 @@ EOF
       log_info "🔗 Joining chunks from $CHUNK_RECORDING_DIR"
       
       # Create file list for FFmpeg concat
-      concat_file="/tmp/concat-${VIDEO_ID}.txt"
-      > "$concat_file"  # Clear the file first
+      concat_file="/tmp/concat-${VIDEO_ID}.txt" > "$concat_file"  # Clear the file first
       
       find "$CHUNK_RECORDING_DIR" -name "*.mp4" -type f | sort | while read chunk_file; do
         echo "file '$(realpath "$chunk_file")'" >> "$concat_file"

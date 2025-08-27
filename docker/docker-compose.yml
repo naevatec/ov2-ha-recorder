@@ -102,12 +102,11 @@ services:
       # Docker Configuration for Failover (OPTIMIZED)
       - OPENVIDU_RECORDING_DOCKER_IMAGE_NAME=${IMAGE_NAME:-openvidu/openvidu-recording}
       - OPENVIDU_RECORDING_DOCKER_IMAGE_TAG=${IMAGE_TAG:-2.31.0}
+      - OPENVIDU_RECORDING_PATH=${OPENVIDU_RECORDING_PATH:-/opt/openvidu/recordings}
       - APP_DOCKER_NETWORK=recorder-ha-controller_default
       - APP_DOCKER_SOCKET_PATH=/var/run/docker.sock
       - APP_FAILOVER_BACKUP_CONTAINER_PREFIX=backup-recorder
-      - APP_DOCKER_MEMORY_LIMIT=2g      # Reduced from 4g to 2g
-      - APP_DOCKER_CPU_LIMIT=1.5        # Reduced from 2 to 1.5
-      - APP_DOCKER_SHM_SIZE=1g          # Reduced from 2g to 1g
+      - APP_DOCKER_SHM_SIZE=536870912   # Reduced from 512MB
 
       # Recording Environment Variables (passed to backup containers)
       - RECORDING_BASE_URL=${RECORDING_BASE_URL:-https://devel.naevatec.com:4443/openvidu}

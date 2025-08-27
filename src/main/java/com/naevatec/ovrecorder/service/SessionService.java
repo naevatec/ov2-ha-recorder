@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 public class SessionService {
 
   private final SessionRepository sessionRepository;
-  private final S3CleanupService s3CleanupService; // NEW: S3 cleanup integration
+  private final S3CleanupService s3CleanupService;
+  private final FailoverService failoverService;
 
   @Value("${app.session.max-inactive-time:600}")
   private long maxInactiveTimeSeconds;
@@ -476,7 +478,57 @@ public class SessionService {
 			sessionRepository.update(session);
 			log.info("Session {} marked as STOPPING due to webhook status: {}", sessionId, status);
 			if(session.getBackupContainerId() != null) {
-				// TODO: WE HAVE TO STOP THE CONTAINER USING THE ECHO Q TRICK
+				log.info("Gracefully stopping backup container for session {} due to main recording completion", sessionId);
+
+				// Use async execution to avoid blocking the webhook response
+				CompletableFuture.runAsync(() -> {
+					try {
+						boolean stopped = failoverService.stopBackupContainerGracefully(sessionId);
+						if (stopped) {
+							log.info("Backup container stopped gracefully for session: {}", sessionId);
+
+							// Update session status to completed after backup stops
+							Optional<RecordingSession> updatedSessionOpt = sessionRepository.findById(sessionId);
+							if (updatedSessionOpt.isPresent()) {
+								RecordingSession updatedSession = updatedSessionOpt.get();
+								updatedSession.setStatus(RecordingSession.SessionStatus.COMPLETED);
+								sessionRepository.update(updatedSession);
+								log.info("Session {} marked as COMPLETED", sessionId);
+							}
+						} else {
+							log.warn("Failed to stop backup container gracefully for session: {}", sessionId);
+
+							// Mark session as failed if backup couldn't be stopped properly
+							Optional<RecordingSession> updatedSessionOpt = sessionRepository.findById(sessionId);
+							if (updatedSessionOpt.isPresent()) {
+								RecordingSession updatedSession = updatedSessionOpt.get();
+								updatedSession.setStatus(RecordingSession.SessionStatus.FAILED);
+								sessionRepository.update(updatedSession);
+								log.warn("Session {} marked as FAILED due to backup stop failure", sessionId);
+							}
+						}
+					} catch (Exception e) {
+						log.error("Error stopping backup container for session {}: {}", sessionId, e.getMessage(), e);
+
+						// Mark session as failed on exception
+						try {
+							Optional<RecordingSession> updatedSessionOpt = sessionRepository.findById(sessionId);
+							if (updatedSessionOpt.isPresent()) {
+								RecordingSession updatedSession = updatedSessionOpt.get();
+								updatedSession.setStatus(RecordingSession.SessionStatus.FAILED);
+								sessionRepository.update(updatedSession);
+								log.warn("Session {} marked as FAILED due to backup stop exception", sessionId);
+							}
+						} catch (Exception updateException) {
+							log.error("Additional error updating session status: {}", updateException.getMessage());
+						}
+					}
+				});
+			} else {
+				// No backup container, just mark as completed
+				session.setStatus(RecordingSession.SessionStatus.COMPLETED);
+				sessionRepository.update(session);
+				log.info("Session {} marked as COMPLETED (no backup container)", sessionId);
 			}
 		}
       }

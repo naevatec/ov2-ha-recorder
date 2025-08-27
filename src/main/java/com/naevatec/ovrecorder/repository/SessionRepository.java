@@ -104,7 +104,7 @@ public class SessionRepository {
       List<RecordingSession> allSessions = findAll();
 
       List<RecordingSession> activeSessions = allSessions.stream()
-          .filter(session -> session.isActive())
+          .filter(RecordingSession::isActive)
           .collect(Collectors.toList());
 
       log.debug("Found {} active sessions out of {} total sessions", activeSessions.size(), allSessions.size());
