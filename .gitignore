@@ -102,7 +102,6 @@ dist
 
 # vuepress v2.x temp and cache directory
 .temp
-.cache
 
 # Docusaurus cache and generated files
 .docusaurus
@@ -132,4 +131,7 @@ dist
 # internal use
 # Ignore anything containing 'internal' in its name (file or directory, anywhere)
 *internal*
-
+.project_name
+.envrc
+.idea
+/recorder-ha-controller.iml

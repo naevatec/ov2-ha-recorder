@@ -59,13 +59,23 @@ fi
   log_info "🎹 Resolution: $RESOLUTION, Framerate: $FRAMERATE"
   log_info "📂 Chunk recording type: $CHUNK_RECORDING_TYPE"
   log_info "📁 Chunk directory: $CHUNK_RECORDING_DIR"
-  log_info "⏱️  Chunk duration: ${CHUNK_TIME_SIZE}s"
+  log_info "⏱️ Chunk duration: ${CHUNK_TIME_SIZE}s"
+  log_info "🔢 Starting chunk: $CHUNK_START"
+
+  # HA Recovery Detection
+  IS_RECOVERY_CONTAINER=false
+  if [[ -n "$CHUNK_START" && "$CHUNK_START" != "0000" ]]; then
+    IS_RECOVERY_CONTAINER=true
+    log_info "🔄 RECOVERY MODE DETECTED - Starting from chunk $CHUNK_START"
+  else
+    log_info "🆕 INITIAL RECORDING - Starting from beginning"
+  fi
 
   ### Chunk Upload Integration ###
   
   # Start chunk uploader if recording to S3
   if [[ "$CHUNK_RECORDING_TYPE" == "s3" ]]; then
-    log_info "☁️  Starting chunk uploader for S3 storage..."
+    log_info "☁️ Starting chunk uploader for S3 storage..."
     log_info "🪣 S3 Bucket: ${HA_AWS_S3_BUCKET:-ov-recordings}"
     log_info "🔗 S3 Endpoint: ${HA_AWS_S3_SERVICE_ENDPOINT:-default AWS}"
     
@@ -88,13 +98,15 @@ fi
   chmod -R 777 /recordings/$VIDEO_ID
   
   # Create initial recording JSON if RECORDING_JSON is provided, otherwise create a default one
-  if [[ -n "$RECORDING_JSON" ]]; then
-    echo $RECORDING_JSON >/recordings/$VIDEO_ID/.recording.$VIDEO_ID
-    log_info "📄 Recording metadata stored from RECORDING_JSON"
-  else
-    # Create default recording JSON structure
-    TIMESTAMP=$(date +%s)000  # Milliseconds timestamp
-    cat > /recordings/$VIDEO_ID/.recording.$VIDEO_ID << EOF
+  # Only create if this is not a recovery container or file doesn't exist
+  if [[ ! -f "/recordings/$VIDEO_ID/.recording.$VIDEO_ID" ]]; then
+    if [[ -n "$RECORDING_JSON" ]]; then
+      echo $RECORDING_JSON >/recordings/$VIDEO_ID/.recording.$VIDEO_ID
+      log_info "📄 Recording metadata stored from RECORDING_JSON"
+    else
+      # Create default recording JSON structure
+      TIMESTAMP=$(date +%s)000  # Milliseconds timestamp
+      cat > /recordings/$VIDEO_ID/.recording.$VIDEO_ID << EOF
 {
   "id": "$VIDEO_ID",
   "object": "recording", 
@@ -114,7 +126,57 @@ fi
   "status": "started"
 }
 EOF
-    log_info "📄 Default recording metadata created"
+      log_info "📄 Default recording metadata created"
+    fi
+  else
+    log_info "📄 Recording metadata already exists (recovery mode)"
+  fi
+
+  ### HA Controller Session Registration ###
+  # CRITICAL: Only register session if this is NOT a recovery container
+  if [[ "$IS_RECOVERY_CONTAINER" == "false" ]]; then
+    log_info "🔗 Registering NEW session with HA Controller..."
+
+    register_session_with_ha() {
+      local recording_file="/recordings/$VIDEO_ID/.recording.$VIDEO_ID"
+      
+      if [[ -f "$recording_file" ]]; then
+        log_info "📤 Sending session registration to HA Controller..."
+        
+        (
+          timeout 30 /usr/local/bin/session-register.sh "$recording_file" 2>&1 | while read line; do
+            log_info "[HA-REG] $line"
+          done
+          
+          if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+            log_success "✅ Session registered with HA Controller successfully"
+            
+            /usr/local/bin/recorder-session-manager.sh "$recording_file" "$CHUNK_RECORDING_DIR" &
+            HA_MANAGER_PID=$!
+            echo $HA_MANAGER_PID > "/tmp/ha-manager-${VIDEO_ID}.pid"
+            log_success "💓 HA Manager started (PID: $HA_MANAGER_PID)"
+          else
+            log_warn "⚠️ Failed to register session with HA Controller (non-critical)"
+          fi
+        ) &
+        
+        log_info "🔗 Session registration initiated in background"
+      fi
+    }
+
+    register_session_with_ha
+  else
+    log_info "🔄 RECOVERY CONTAINER - Skipping session registration (already exists)"
+    log_info "💓 Starting HA Manager for existing session..."
+    
+    # Still start the HA manager for heartbeats, but don't register
+    recording_file="/recordings/$VIDEO_ID/.recording.$VIDEO_ID"
+    if [[ -f "$recording_file" ]]; then
+      /usr/local/bin/recorder-session-manager.sh "$recording_file" "$CHUNK_RECORDING_DIR" &
+      HA_MANAGER_PID=$!
+      echo $HA_MANAGER_PID > "/tmp/ha-manager-${VIDEO_ID}.pid"
+      log_success "💓 HA Manager started for recovery (PID: $HA_MANAGER_PID)"
+    fi
   fi
 
   ### Run headless Chrome ###
@@ -124,18 +186,28 @@ EOF
 
   ### Evaluate chunk configuration ###
   # Get next index to use
-  result=$(cd "$CHUNK_RECORDING_DIR" && echo $(ls ????.mp4 2>/dev/null || echo "$CHUNK_START") | sed 's/\w+.mp4//g' | sed 's/.mp4//g' | awk '{print $NF}' | sed 's/^0*//g')
+  if ls "$CHUNK_RECORDING_DIR"/*.mp4 1> /dev/null 2>&1; then
+      # MP4 files exist, find the highest numbered one
+      result=$(cd "$CHUNK_RECORDING_DIR" && ls ????.mp4 2>/dev/null | sed 's/\.mp4$//' | sort -n | tail -1 | sed 's/^0*//')
+      log_info "Found existing chunks, highest: $result"
+  else
+      # No MP4 files, use CHUNK_START
+      result=$(echo "$CHUNK_START" | sed 's/^0*//')
+      log_info "No existing chunks, using CHUNK_START: $CHUNK_START -> $result"
+  fi
+
   # Check if the result is empty
   if [[ -z "$result" ]]; then
       log_info "Result is empty. Setting default value to 0."
       result=0
   fi
+
   INDEX=$(printf %04d $(( 1 + $result)) )
-  log_info "📊 Starting chunk index: $INDEX"
+  log_info "Starting chunk index: $INDEX"
 
   # Create a non empty file to avoid OpenVidu to stop the recording
   echo "Recording by chunks" > /recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT
-  log_info "📝 Placeholder video file created"
+  log_info "📁 Placeholder video file created"
 
   ### Start recording with ffmpeg ###
 
@@ -262,7 +334,7 @@ EOF
       # Check local directory
       log_info "📋 Checking local chunk directory..."
       if [ -d "$CHUNK_RECORDING_DIR" ]; then
-        local local_chunks=$(find "$CHUNK_RECORDING_DIR" -name "*.mp4" -type f | wc -l)
+        local_chunks=$(find "$CHUNK_RECORDING_DIR" -name "*.mp4" -type f | wc -l)
         log_info "Found $local_chunks local chunks"
         if [ $local_chunks -gt 0 ]; then
           log_info "Local chunks found, continuing with available chunks"
@@ -293,8 +365,7 @@ EOF
       log_info "🔗 Joining chunks from $CHUNK_RECORDING_DIR"
       
       # Create file list for FFmpeg concat
-      concat_file="/tmp/concat-${VIDEO_ID}.txt"
-      > "$concat_file"  # Clear the file first
+      concat_file="/tmp/concat-${VIDEO_ID}.txt" > "$concat_file"  # Clear the file first
       
       find "$CHUNK_RECORDING_DIR" -name "*.mp4" -type f | sort | while read chunk_file; do
         echo "file '$(realpath "$chunk_file")'" >> "$concat_file"
@@ -409,9 +480,10 @@ EOF
   
   log_info "📊 Recording stats: Duration=${DURATION}s, Size=${SIZE} bytes, Audio=$HAS_AUDIO, Video=$HAS_VIDEO"
 
+
   ### Generate video thumbnail ###
 
-  log_info "🖼️  Generating video thumbnail..."
+  log_info "🖼️ Generating video thumbnail..."
   if [[ -f "/recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT" ]]; then
     MIDDLE_TIME=$(ffmpeg -i /recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT 2>&1 | grep Duration | awk '{print $2}' | tr -d , | awk -F ':' '{print ($3+$2*60+$1*3600)/2}' || echo "1")
     THUMBNAIL_HEIGHT=$((480 * $HEIGHT / $WIDTH))
@@ -428,66 +500,60 @@ EOF
   ### Change permissions to all generated files ###
 
   sudo chmod -R 777 /recordings/$VIDEO_ID
-  log_info "📁 File permissions updated"
+  log_info "🔒 File permissions updated"
 
   ### Upload logs to S3 (if S3 storage is enabled) ###
-  
-  if [[ "$CHUNK_RECORDING_TYPE" == "s3" ]]; then
-    log_info "📋 Starting log upload to S3..."
-    
-    # Upload all logs related to this recording session
-    if /usr/local/bin/log-uploader.sh "$VIDEO_ID"; then
-      log_success "All logs uploaded to S3 successfully"
-    else
-      log_warn "Failed to upload some logs to S3 (non-critical)"
-      # Continue anyway - log upload failure shouldn't fail the recording
-    fi
-    
-    log_success "Log upload process completed"
-  else
-    log_info "📋 Local storage mode - logs kept locally only"
-  fi
 
-  ### Clean up S3 chunks after successful recording ###
-  
-  if [[ "$CHUNK_RECORDING_TYPE" == "s3" ]]; then
-    log_info "🧹 Starting S3 chunk cleanup..."
-    
-    # Only cleanup if we have a successful final video
-    if [[ -f "/recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT" ]]; then
-      final_size=$(stat -c%s "/recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT" 2>/dev/null || echo 0)
-      
-      if [[ $final_size -gt 1048576 ]]; then  # > 1MB
-        log_info "✅ Final video verified (${final_size} bytes) - proceeding with S3 cleanup"
-        
-        # Call chunk cleaner with the same environment variables
-        export AWS_ACCESS_KEY_ID="${HA_AWS_ACCESS_KEY}"
-        export AWS_SECRET_ACCESS_KEY="${HA_AWS_SECRET_KEY}"
-        export HA_AWS_S3_SERVICE_ENDPOINT="${HA_AWS_S3_SERVICE_ENDPOINT}"
-        export HA_AWS_S3_BUCKET="${HA_AWS_S3_BUCKET}"
-        export VIDEO_NAME="${VIDEO_NAME}"
-        export VIDEO_FORMAT="${VIDEO_FORMAT}"
-        
-        if /usr/local/bin/chunk-cleaner.sh "$VIDEO_ID"; then
-          log_success "S3 chunks cleaned up successfully"
-        else
-          log_warn "Failed to cleanup some S3 chunks (non-critical - chunks preserved for manual cleanup)"
-          # Don't fail the recording process if cleanup fails
-        fi
+  if [[ "${DEBUG_MODE:-false}" == "true" ]]; then
+      log_info "📋 Starting log summary..."
+      # Upload all logs related to this recording session
+      if /usr/local/bin/log-uploader.sh "$VIDEO_ID"; then
+        log_success "Log summary generated successfully"
       else
-        log_warn "Final video too small (${final_size} bytes) - skipping S3 cleanup for safety"
-        log_info "💡 S3 chunks preserved for manual recovery"
+        log_warn "Failed to generate some logs (non-critical)"
+        # Continue anyway - log upload failure shouldn't fail the recording
       fi
-    else
-      log_warn "Final video not found - skipping S3 cleanup for safety"
-      log_info "💡 S3 chunks preserved for manual recovery"
-    fi
-    
-    log_success "S3 chunk cleanup process completed"
-  else
-    log_info "💾 Local storage mode - no S3 cleanup needed"
   fi
 
+#  ### Clean up S3 chunks after successful recording ###
+#
+#  if [[ "$CHUNK_RECORDING_TYPE" == "s3" ]]; then
+#    log_info "🧹 Starting S3 chunk cleanup..."
+#
+#    # Only cleanup if we have a successful final video
+#    if [[ -f "/recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT" ]]; then
+#      final_size=$(stat -c%s "/recordings/$VIDEO_ID/$VIDEO_NAME.$VIDEO_FORMAT" 2>/dev/null || echo 0)
+#
+#      if [[ $final_size -gt 1048576 ]]; then  # > 1MB
+#        log_info "✅ Final video verified (${final_size} bytes) - proceeding with S3 cleanup"
+#
+#        # Call chunk cleaner with the same environment variables
+#        export AWS_ACCESS_KEY_ID="${HA_AWS_ACCESS_KEY}"
+#        export AWS_SECRET_ACCESS_KEY="${HA_AWS_SECRET_KEY}"
+#        export HA_AWS_S3_SERVICE_ENDPOINT="${HA_AWS_S3_SERVICE_ENDPOINT}"
+#        export HA_AWS_S3_BUCKET="${HA_AWS_S3_BUCKET}"
+#        export VIDEO_NAME="${VIDEO_NAME}"
+#        export VIDEO_FORMAT="${VIDEO_FORMAT}"
+#
+#        if /usr/local/bin/chunk-cleaner.sh "$VIDEO_ID"; then
+#          log_success "S3 chunks cleaned up successfully"
+#        else
+#          log_warn "Failed to cleanup some S3 chunks (non-critical - chunks preserved for manual cleanup)"
+#          # Don't fail the recording process if cleanup fails
+#        fi
+#      else
+#        log_warn "Final video too small (${final_size} bytes) - skipping S3 cleanup for safety"
+#        log_info "💡 S3 chunks preserved for manual recovery"
+#      fi
+#    else
+#      log_warn "Final video not found - skipping S3 cleanup for safety"
+#      log_info "💡 S3 chunks preserved for manual recovery"
+#    fi
+#
+#    log_success "S3 chunk cleanup process completed"
+#  else
+#    log_info "💾 Local storage mode - no S3 cleanup needed"
+#  fi
 
   ### Clean up temporary analysis file ###
   
@@ -507,12 +573,60 @@ EOF
     fi
   fi
 
-  ### Change permissions to all generated files ###
+  ### HA Controller - Cleanup Background Processes ###
+  log_info "🧹 Cleaning up HA Controller background processes..."
+
+  cleanup_ha_processes() {
+    # Quick cleanup - kill processes immediately without waiting
+    if [[ -f "/tmp/ha-manager-${VIDEO_ID}.pid" ]]; then
+      HA_MANAGER_PID=$(cat "/tmp/ha-manager-${VIDEO_ID}.pid")
+      if kill -0 "$HA_MANAGER_PID" 2>/dev/null; then
+        log_info "🛑 Killing HA Manager (PID: $HA_MANAGER_PID)"
+        kill -KILL "$HA_MANAGER_PID" 2>/dev/null || true
+      fi
+      rm -f "/tmp/ha-manager-${VIDEO_ID}.pid"
+    fi
+    
+    # Kill any remaining HA processes quickly
+    pkill -KILL -f "recorder-session-manager.sh.*$VIDEO_ID" 2>/dev/null || true
+    pkill -KILL -f "session-register.sh.*$VIDEO_ID" 2>/dev/null || true
+    
+    log_success "🧹 HA Controller cleanup completed"
+  }
+
+  # Do HA cleanup in background while other tasks continue
+  cleanup_ha_processes &
+
+  ### Final permissions and completion ###
 
   sudo chmod -R 777 /recordings/$VIDEO_ID
-  log_info "📁 File permissions updated"
+  log_info "🔒 Final file permissions updated"
 
   log_success "🎉 Recording process completed for VIDEO_ID: $VIDEO_ID"
+  
+  # Log final container type for debugging
+  if [[ "$IS_RECOVERY_CONTAINER" == "true" ]]; then
+    log_success "🔄 RECOVERY CONTAINER completed successfully"
+  else
+    log_success "🆕 INITIAL CONTAINER completed successfully"
+  fi
+
+  ### EMERGENCY 30-SECOND CLEANUP - NO MERCY ###
+  log_info "🚨 EMERGENCY CLEANUP: 30-second deadline mode"
+
+  # IMMEDIATE PROCESS TERMINATION - NO WAITING
+  log_info "💥 Nuclear process cleanup (no grace period)"
+
+  # Kill everything IMMEDIATELY with -9 (no graceful shutdown)
+  pkill -9 -f "google-chrome" 2>/dev/null || true
+  pkill -9 -f "chrome" 2>/dev/null || true
+  pkill -9 -f "Xvfb" 2>/dev/null || true
+  pkill -9 -f "pulseaudio" 2>/dev/null || true
+  pkill -9 -f "chunk-uploader.sh" 2>/dev/null || true
+  pkill -9 -f "inotifywait" 2>/dev/null || true
+  pkill -9 -f "recorder-session-manager" 2>/dev/null || true
+  pkill -9 -f "session-register" 2>/dev/null || true
+  pkill -9 -f "sleep 120" 2>/dev/null || true
 
   exit 0
 
@@ -521,10 +635,10 @@ EOF
 # Final debug file copy (outside the tee block to avoid issues)
 if [[ ${DEBUG_MODE} == "true" ]]; then
   # This is now redundant since we copy above, but keeping for safety
-  log_info "🐛 Final debug check..."
+  log_info "🐛 Final debug check completed"
 fi
 
-### Change permissions to all generated files ###
+### Final permissions ###
 sudo chmod -R 777 /recordings/$VIDEO_ID
 
 # Force exit to ensure container stops

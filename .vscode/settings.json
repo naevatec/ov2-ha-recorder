@@ -1,0 +1,35 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.dependency.syncWithFolderExplorer": true,
+  "java.maven.downloadSources": true,
+  "java.maven.downloadJavadoc": true,
+  "java.saveActions.organizeImports": true,
+  "java.format.enabled": true,
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.configuration.maven.userSettings": null,
+  "java.import.maven.enabled": true,
+  "java.autobuild.enabled": true,
+  "java.maxConcurrentBuilds": 1,
+  "java.project.sourcePaths": [
+    "src/main/java"
+  ],
+  "java.project.outputPath": "target/classes",
+  "java.project.referencedLibraries": [
+    "lib/**/*.jar"
+  ],
+  "spring-boot.ls.checkjvm": false,
+  "files.exclude": {
+    "**/target": true,
+    "**/.classpath": true,
+    "**/.project": true,
+    "**/.settings": true,
+    "**/.factorypath": true
+  },
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-21",
+      "path": "/Users/eiglesia/Library/Java/JavaVirtualMachines/Oracle_JDK-21.jdk/Contents/Home",
+      "default": true
+    }
+  ]
+}

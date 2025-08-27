@@ -36,49 +36,181 @@ services:
     entrypoint: >
       /bin/sh -c "
       echo 'Setting up MinIO...';
-      echo 'Using credentials: $$MINIO_ROOT_USER / [password hidden]';
-      echo 'Creating bucket: $$MINIO_BUCKET_NAME';
-      /usr/bin/mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
-      /usr/bin/mc mb local/$$MINIO_BUCKET_NAME --ignore-existing;
-      /usr/bin/mc policy set public local/$$MINIO_BUCKET_NAME;
+      echo 'Using credentials: $HA_AWS_ACCESS_KEY / [password hidden]';
+      echo 'Creating bucket: $HA_AWS_S3_BUCKET';
+      /usr/bin/mc alias set local http://minio:9000 $HA_AWS_ACCESS_KEY $HA_AWS_SECRET_KEY;
+      /usr/bin/mc mb local/$HA_AWS_S3_BUCKET --ignore-existing;
+      /usr/bin/mc policy set public local/$HA_AWS_S3_BUCKET;
       echo 'MinIO setup completed successfully';
       "
     networks:
       - ov-ha-recorder
 
+  # Redis service for OV Recorder HA Controller
+  redis:
+    image: redis:7-alpine
+    container_name: ov-recorder-redis
+    # No external port exposure in production - internal only
+    ports:
+      - 15336:6379  # For testing only - remove in production
+    volumes:
+      - ./data/redis/data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - ov-ha-recorder
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OV Recorder HA Controller service
+  ov-recorder-ha-controller:
+    build:
+      context: server
+      dockerfile: Dockerfile
+      additional_contexts:
+        sources: "../"
+    container_name: ov-recorder-ha-controller
+    ports:
+      - "${HA_CONTROLLER_PORT:-8080}:8080"
+    environment:
+      # Redis connection
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_DATABASE=0
+      - SPRING_DATA_REDIS_TIMEOUT=5000ms
+
+      # Security
+      - HA_CONTROLLER_USERNAME=${HA_CONTROLLER_USERNAME:-recorder}
+      - HA_CONTROLLER_PASSWORD=${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}
+
+      # Session management (OPTIMIZED)
+      - APP_SESSION_CLEANUP_INTERVAL=${HA_SESSION_CLEANUP_INTERVAL:-30000}
+      - APP_SESSION_MAX_INACTIVE_TIME=${HA_SESSION_MAX_INACTIVE_TIME:-300}  # Reduced from 600 to 300
+      - APP_SESSION_HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-20}             # Reduced from 30 to 20
+      - APP_FAILOVER_MAX_MISSED_HEARTBEATS=${HA_MAX_MISSED_HEARTBEATS:-2}    # Reduced from 3 to 2
+      - APP_FAILOVER_CHUNK_TIME=${CHUNK_TIME_SIZE:-10}
+
+      # Failover Configuration (OPTIMIZED)
+      - APP_FAILOVER_ENABLED=true
+      - APP_FAILOVER_CHECK_INTERVAL=${HA_FAILOVER_CHECK_INTERVAL:-30}        # Reduced from 60 to 30
+      - APP_FAILOVER_HEARTBEAT_TIMEOUT=${HA_FAILOVER_HEARTBEAT_TIMEOUT:-120} # 2 minutes instead of 5
+      - APP_FAILOVER_STUCK_CHUNK_TIMEOUT=${HA_FAILOVER_STUCK_CHUNK_TIMEOUT:-60} # 1 minute
+
+      # Docker Configuration for Failover (OPTIMIZED)
+      - OPENVIDU_RECORDING_DOCKER_IMAGE_NAME=${IMAGE_NAME:-openvidu/openvidu-recording}
+      - OPENVIDU_RECORDING_DOCKER_IMAGE_TAG=${IMAGE_TAG:-2.31.0}
+      - OPENVIDU_RECORDING_PATH=${OPENVIDU_RECORDING_PATH:-/opt/openvidu/recordings}
+      - APP_DOCKER_NETWORK=recorder-ha-controller_default
+      - APP_DOCKER_SOCKET_PATH=/var/run/docker.sock
+      - APP_FAILOVER_BACKUP_CONTAINER_PREFIX=backup-recorder
+      - APP_DOCKER_SHM_SIZE=536870912   # Reduced from 512MB
+
+      # Recording Environment Variables (passed to backup containers)
+      - RECORDING_BASE_URL=${RECORDING_BASE_URL:-https://devel.naevatec.com:4443/openvidu}
+      - HA_CONTROLLER_HOST=ov-recorder-ha-controller
+      - HA_CONTROLLER_PORT=8080
+
+      # OpenVidu Webhook Relay Configuration (OPTIMIZED)
+      - APP_WEBHOOK_ENDPOINT=${OPENVIDU_WEBHOOK_ENDPOINT:-}
+      - APP_WEBHOOK_HEADERS=${OPENVIDU_WEBHOOK_HEADERS:-}
+      - APP_WEBHOOK_ENABLED=${OPENVIDU_WEBHOOK:-false}
+      - APP_WEBHOOK_TIMEOUT_MS=3000                    # Reduced from 5000 to 3000
+      - APP_WEBHOOK_RETRIES=2                          # Reduced from 3 to 2
+      - APP_WEBHOOK_RETRY_DELAY_MS=500                 # Reduced from 1000 to 500
+      - APP_WEBHOOK_THREAD_POOL_CORE_SIZE=10          # Increased from 5 to 10
+      - APP_WEBHOOK_THREAD_POOL_MAX_SIZE=50           # Increased from 20 to 50
+      - APP_WEBHOOK_THREAD_POOL_QUEUE_CAPACITY=200    # Increased from 100 to 200
+
+      # S3 Configuration (AWS credentials)
+      - APP_AWS_S3_BUCKET_NAME=${HA_AWS_S3_BUCKET:-ov-recordings}
+      - APP_AWS_S3_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
+      - APP_AWS_S3_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
+      - APP_AWS_S3_REGION=${HA_AWS_S3_REGION:-us-east-1}
+      - APP_AWS_S3_SERVICE_ENDPOINT=${HA_AWS_S3_SERVICE_ENDPOINT:-http://minio:9000}
+
+      # S3 Cleanup Configuration (OPTIMIZED)
+      - APP_RECORDING_TYPE=${HA_RECORDING_STORAGE:-s3}
+      - APP_RECORDING_CHUNK_FOLDER=${CHUNK_FOLDER:-chunks}
+      - APP_S3_CLEANUP_ENABLED=${HA_S3_CLEANUP_ENABLED:-true}
+      - APP_S3_CLEANUP_ASYNC=${HA_S3_CLEANUP_ASYNC:-true}
+      - APP_S3_CLEANUP_BATCH_SIZE=${HA_S3_CLEANUP_BATCH_SIZE:-500}  # Reduced from 1000 to 500
+
+      # Application profile
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-dev}
+
+      # Swagger Configuration (dev/test only)
+      - SPRINGDOC_API_DOCS_ENABLED=true
+      - SPRINGDOC_SWAGGER_UI_ENABLED=true
+
+      # JVM Optimization
+      - JAVA_OPTS=-Xmx1g -Xms512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ov-ha-recorder
+    user: "0:0"  # <-- NEW: Run as root to access Docker socket
+    volumes:
+      - ./data/controller/logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock:rw  # Docker socket for failover
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/sessions/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - ha-controller
+      - test
+
   # Your custom OpenVidu recording image
   openvidu-recording:
     build:
-      context: .
+      context: ./recorder
       dockerfile: Dockerfile
       args:
-        - TAG=${TAG:-latest}
-    image: openvidu/openvidu-recording:${TAG:-latest}
-    container_name: openvidu-recording-${TAG:-latest}
+        - IMAGE_TAG=${IMAGE_TAG:-latest}
+    image: ${IMAGE_NAME:-openvidu/openvidu-recording}:${IMAGE_TAG:-latest}
+    container_name: openvidu-recording-${IMAGE_TAG:-latest}
     depends_on:
       - minio-mc
+      - ov-recorder-ha-controller
     environment:
       # MinIO connection settings (using your HA variable names)
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
       - MINIO_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
       - MINIO_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
-      # HA Recorder specific variables
-      - HA_AWS_S3_SERVICE_ENDPOINT=${HA_AWS_S3_SERVICE_ENDPOINT}
+
+      # HA Recorder specific variables (OPTIMIZED)
+      - HA_AWS_S3_SERVICE_ENDPOINT=${HA_AWS_S3_SERVICE_ENDPOINT:-http://minio:9000}
       - HA_AWS_S3_BUCKET=${HA_AWS_S3_BUCKET:-ov-recordings}
       - HA_AWS_ACCESS_KEY=${HA_AWS_ACCESS_KEY:-naeva_minio}
       - HA_AWS_SECRET_KEY=${HA_AWS_SECRET_KEY:-N43v4t3c_M1n10}
       - MINIO_API_PORT=${MINIO_API_PORT:-9000}
-      - HA_RECORDING_STORAGE=${HA_RECORDING_STORAGE:-local}
-      - CHUNK_FOLDER=${CHUNK_FOLDER:-/local-chunks}
-      - CHUNK_TIME_SIZE=${CHUNK_TIME_SIZE:-20}
+      - HA_RECORDING_STORAGE=${HA_RECORDING_STORAGE:-s3}  # Default to S3 for testing
+      - CHUNK_FOLDER=${CHUNK_FOLDER:-/chunks}
+      - CHUNK_TIME_SIZE=${CHUNK_TIME_SIZE:-10}             # Optimized chunk size
+
+      # HA Controller connection (OPTIMIZED)
+      - HA_CONTROLLER_URL=http://ov-recorder-ha-controller:8080
+      - HA_CONTROLLER_USERNAME=${HA_CONTROLLER_USERNAME:-recorder}
+      - HA_CONTROLLER_PASSWORD=${HA_CONTROLLER_PASSWORD:-rec0rd3r_2024!}
+      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-20}       # Reduced from 30 to 20
+
       # Recording settings
       - RECORDING_PATH=/recordings
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+
     volumes:
       - ./data/recorder/data:/recordings
-      # Mount your scripts and utils if they're in separate directories
-      - ./scripts:/scripts:ro
-      - ./utils:/utils:ro
+      # Mount scripts and utils from recorder directory (within docker folder)
+      - ./recorder/scripts:/scripts:ro
+      - ./recorder/utils:/utils:ro
     networks:
       - ov-ha-recorder
     # Use profiles to control when recorder starts
@@ -96,3 +228,6 @@ volumes:
 networks:
   ov-ha-recorder:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

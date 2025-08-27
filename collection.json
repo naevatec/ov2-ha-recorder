@@ -1,0 +1,1831 @@
+{
+  "info": {
+    "name": "OpenVidu HA Recorder - Complete API Collection",
+    "description": "Complete API collection for OpenVidu HA Recorder including Session Management, Failover Control, and Webhook Relay endpoints",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{username}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{password}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "recorder",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "rec0rd3r_2024!",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "test-session-001",
+      "type": "string"
+    },
+    {
+      "key": "test_session_id",
+      "value": "eiglesia07_1755710237963",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Monitoring",
+      "item": [
+        {
+          "name": "Service Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Health check returns enhanced statistics', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql('healthy');",
+                  "    pm.expect(jsonData.service).to.eql('recorder-ha-controller');",
+                  "    pm.expect(jsonData).to.have.property('activeSessions');",
+                  "    pm.expect(jsonData).to.have.property('totalSessions');",
+                  "    pm.expect(jsonData).to.have.property('inactiveSessions');",
+                  "    pm.expect(jsonData).to.have.property('s3CleanupInfo');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "health"
+              ]
+            },
+            "description": "Check the health of the HA Recorder service including session statistics and S3 cleanup status"
+          },
+          "response": []
+        },
+        {
+          "name": "SpringBoot Actuator Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('SpringBoot health response', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('status');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/actuator/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "SpringBoot Actuator health endpoint (no authentication required)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Health check and monitoring endpoints"
+    },
+    {
+      "name": "Session Management",
+      "item": [
+        {
+          "name": "Create Recording Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Session created successfully', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('sessionId');",
+                  "    pm.expect(jsonData).to.have.property('clientId');",
+                  "    pm.expect(jsonData.active).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"clientId\": \"recorder-container01\",\n  \"clientHost\": \"192.168.1.100\",\n  \"status\": \"STARTING\",\n  \"metadata\": {\n    \"resolution\": \"1280x720\",\n    \"framerate\": 25\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions"
+              ]
+            },
+            "description": "Create a new recording session with enhanced metadata support"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Session by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Session data returned', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('sessionId');",
+                  "        pm.expect(jsonData).to.have.property('status');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}"
+              ]
+            },
+            "description": "Retrieve session details by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "List All Active Sessions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Active sessions list returned', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('sessions');",
+                  "    pm.expect(jsonData).to.have.property('count');",
+                  "    pm.expect(jsonData.type).to.eql('active');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions"
+              ]
+            },
+            "description": "Get list of all active recording sessions"
+          },
+          "response": []
+        },
+        {
+          "name": "List All Sessions (Active + Inactive)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('All sessions returned with statistics', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('sessions');",
+                  "    pm.expect(jsonData).to.have.property('totalCount');",
+                  "    pm.expect(jsonData).to.have.property('activeCount');",
+                  "    pm.expect(jsonData).to.have.property('inactiveCount');",
+                  "    pm.expect(jsonData.type).to.eql('all');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/all",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "all"
+              ]
+            },
+            "description": "Get all sessions including both active and inactive"
+          },
+          "response": []
+        },
+        {
+          "name": "List Inactive Sessions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Inactive sessions returned', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('sessions');",
+                  "    pm.expect(jsonData).to.have.property('count');",
+                  "    pm.expect(jsonData.type).to.eql('inactive');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/inactive",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "inactive"
+              ]
+            },
+            "description": "Get list of inactive sessions only"
+          },
+          "response": []
+        },
+        {
+          "name": "Check if Session is Active",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Active status returned', function() {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('sessionId');",
+                  "    pm.expect(jsonData).to.have.property('active');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/active",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "active"
+              ]
+            },
+            "description": "Check if a specific session is active"
+          },
+          "response": []
+        }
+      ],
+      "description": "Session CRUD operations and listing"
+    },
+    {
+      "name": "Heartbeat & Monitoring",
+      "item": [
+        {
+          "name": "Send Heartbeat with Chunk Info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Heartbeat updated with chunk info', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('message');",
+                  "        pm.expect(jsonData).to.have.property('lastChunk');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastChunk\": \"0003.mp4\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/heartbeat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "heartbeat"
+              ]
+            },
+            "description": "Send heartbeat with current chunk information for failover monitoring"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Simple Heartbeat",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Simple heartbeat updated', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('message');",
+                  "        pm.expect(jsonData).to.have.property('sessionId');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/heartbeat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "heartbeat"
+              ]
+            },
+            "description": "Send simple heartbeat without chunk information"
+          },
+          "response": []
+        }
+      ],
+      "description": "Heartbeat endpoints for session monitoring and failover detection"
+    },
+    {
+      "name": "Session Lifecycle",
+      "item": [
+        {
+          "name": "Update Session Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Status updated successfully', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('status');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"RECORDING\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "status"
+              ]
+            },
+            "description": "Update session status. Valid values: STARTING, RECORDING, PAUSED, STOPPING, COMPLETED, FAILED, INACTIVE"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Recording Path",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Recording path updated', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('recordingPath');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recordingPath\": \"/recordings/{{session_id}}/video.mp4\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/recording-path",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "recording-path"
+              ]
+            },
+            "description": "Update the recording file path for a session"
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Session (Soft Delete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Session deactivated', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData.status).to.eql('INACTIVE');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "deactivate"
+              ]
+            },
+            "description": "Mark session as inactive but keep record in Redis (soft delete)"
+          },
+          "response": []
+        },
+        {
+          "name": "Stop Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Session stopped', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('message');",
+                  "        pm.expect(jsonData.message).to.include('stopped');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}/stop",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}",
+                "stop"
+              ]
+            },
+            "description": "Stop a session (marks as STOPPING then COMPLETED)"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Session (Hard Delete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Session removed', function() {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('message');",
+                  "        pm.expect(jsonData.message).to.include('removed');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{session_id}}"
+              ]
+            },
+            "description": "Permanently remove session from Redis with S3 chunk cleanup"
+          },
+          "response": []
+        }
+      ],
+      "description": "Session status management and lifecycle operations"
+    },
+    {
+      "name": "Failover Management",
+      "item": [
+        {
+          "name": "Get Failover Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Failover status response has required fields', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('enabled');",
+                  "    pm.expect(jsonData).to.have.property('heartbeatTimeoutSeconds');",
+                  "    pm.expect(jsonData).to.have.property('dockerInitialized');",
+                  "    pm.expect(jsonData).to.have.property('activeBackupContainers');",
+                  "    pm.expect(jsonData).to.have.property('dockerStatus');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/failover/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "failover",
+                "status"
+              ]
+            },
+            "description": "Get current status of the failover system including Docker status and active backup containers"
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger Manual Failover Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Manual failover check response', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "    pm.expect(jsonData.message).to.include('completed');",
+                  "    pm.expect(jsonData).to.have.property('timestamp');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/failover/check",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "failover",
+                "check"
+              ]
+            },
+            "description": "Manually trigger the failover detection process to check for failed sessions"
+          },
+          "response": []
+        },
+        {
+          "name": "List Active Backup Containers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Backup containers list response', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('activeBackupContainers');",
+                  "    pm.expect(jsonData).to.have.property('count');",
+                  "    pm.expect(jsonData).to.have.property('timestamp');",
+                  "    pm.expect(jsonData.count).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/failover/backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "failover",
+                "backups"
+              ]
+            },
+            "description": "Get a list of all currently running backup containers"
+          },
+          "response": []
+        },
+        {
+          "name": "Stop Backup Container (Graceful)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Graceful stop response', function () {",
+                  "        const jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('message');",
+                  "        pm.expect(jsonData.message).to.include('gracefully');",
+                  "        pm.expect(jsonData).to.have.property('method', 'graceful');",
+                  "        pm.expect(jsonData).to.have.property('sessionId');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/failover/backup/{{test_session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "failover",
+                "backup",
+                "{{test_session_id}}"
+              ]
+            },
+            "description": "Gracefully stop a backup container by sending 'q' signal to FFmpeg"
+          },
+          "response": []
+        },
+        {
+          "name": "Force Stop Backup Container",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Force stop response', function () {",
+                  "        const jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('message');",
+                  "        pm.expect(jsonData.message).to.include('force stopped');",
+                  "        pm.expect(jsonData).to.have.property('method', 'force');",
+                  "        pm.expect(jsonData).to.have.property('sessionId');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/failover/backup/{{test_session_id}}/force",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "failover",
+                "backup",
+                "{{test_session_id}}",
+                "force"
+              ]
+            },
+            "description": "Immediately terminate a backup container without waiting for graceful shutdown"
+          },
+          "response": []
+        }
+      ],
+      "description": "Docker-in-Docker failover system management"
+    },
+    {
+      "name": "Webhook Relay",
+      "item": [
+        {
+          "name": "OpenVidu Webhook Endpoint (POST)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Webhook received and relay initiated', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('status', 'received');",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "    pm.expect(jsonData).to.have.property('processingTimeMs');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "User-Agent",
+                "value": "OpenVidu-Server/2.31.0"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"recordingStatusChanged\",\n  \"timestamp\": 1647856800000,\n  \"sessionId\": \"{{session_id}}\",\n  \"id\": \"{{session_id}}\",\n  \"status\": \"started\",\n  \"recordingId\": \"rec_{{session_id}}\",\n  \"name\": \"{{session_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/openvidu/webhook",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "openvidu",
+                "webhook"
+              ]
+            },
+            "description": "Primary OpenVidu webhook endpoint (no authentication required)"
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook Recording Stopped",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Webhook processed for stopped recording', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('status', 'received');",
+                  "    pm.expect(jsonData).to.have.property('processingTimeMs');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "User-Agent",
+                "value": "OpenVidu-Server/2.31.0"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"recordingStatusChanged\",\n  \"timestamp\": 1647856900000,\n  \"sessionId\": \"{{session_id}}\",\n  \"id\": \"{{session_id}}\",\n  \"status\": \"stopped\",\n  \"recordingId\": \"rec_{{session_id}}\",\n  \"name\": \"{{session_id}}\",\n  \"duration\": 120.5,\n  \"size\": 15728640\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/openvidu/webhook",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "openvidu",
+                "webhook"
+              ]
+            },
+            "description": "Test webhook for recording stopped event (triggers backup container graceful shutdown)"
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook Health Check (GET)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Webhook endpoint is healthy', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('status', 'healthy');",
+                  "    pm.expect(jsonData).to.have.property('endpoint', '/openvidu/webhook');",
+                  "    pm.expect(jsonData).to.have.property('relayStatus');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/openvidu/webhook",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "openvidu",
+                "webhook"
+              ]
+            },
+            "description": "Webhook health check and verification endpoint"
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook Relay Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Webhook relay statistics returned', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('enabled');",
+                  "    pm.expect(jsonData).to.have.property('totalRequests');",
+                  "    pm.expect(jsonData).to.have.property('successfulRequests');",
+                  "    pm.expect(jsonData).to.have.property('failedRequests');",
+                  "    pm.expect(jsonData).to.have.property('successRate');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/openvidu/webhook/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "openvidu",
+                "webhook",
+                "status"
+              ]
+            },
+            "description": "Get webhook relay statistics and configuration information"
+          },
+          "response": []
+        }
+      ],
+      "description": "OpenVidu webhook relay endpoints (no authentication required)"
+    },
+    {
+      "name": "Maintenance & Admin",
+      "item": [
+        {
+          "name": "Manual Session Cleanup",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Cleanup completed', function () {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "    pm.expect(jsonData).to.have.property('removedSessions');",
+                  "    pm.expect(jsonData.removedSessions).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/cleanup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "cleanup"
+              ]
+            },
+            "description": "Manually trigger cleanup of inactive sessions with S3 chunk cleanup"
+          },
+          "response": []
+        }
+      ],
+      "description": "System maintenance and administrative operations"
+    },
+    {
+      "name": "Complete Workflows",
+      "item": [
+        {
+          "name": "Full Session Lifecycle Test",
+          "item": [
+            {
+              "name": "1. Create Test Session",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.collectionVariables.set('workflow_session_id', jsonData.sessionId);",
+                      "    pm.test('Session created with active=true', function() {",
+                      "        pm.expect(jsonData.active).to.eql(true);",
+                      "        pm.expect(jsonData.status).to.eql('STARTING');",
+                      "    });",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": \"workflow-{{$randomUUID}}\",\n  \"clientId\": \"test-client\",\n  \"clientHost\": \"localhost\",\n  \"status\": \"STARTING\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/sessions",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "2. Send Initial Heartbeat",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"lastChunk\": \"0001.mp4\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/heartbeat",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "heartbeat"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "3. Update Status to Recording",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"RECORDING\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "status"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "4. Send Progress Heartbeat",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"lastChunk\": \"0005.mp4\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/heartbeat",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "heartbeat"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "5. Update Recording Path",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"recordingPath\": \"/recordings/{{workflow_session_id}}/video.mp4\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/recording-path",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "recording-path"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "6. Verify Session is Active",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Session is active', function() {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.expect(jsonData.active).to.eql(true);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/active",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "active"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "7. Stop Session",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/stop",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "stop"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "8. Verify Session Stopped",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Session is inactive', function() {",
+                      "    var jsonData = pm.response.json();",
+                      "    pm.expect(jsonData.active).to.eql(false);",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}/active",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}",
+                    "active"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "9. Remove Session",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.collectionVariables.unset('workflow_session_id');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/sessions/{{workflow_session_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "sessions",
+                    "{{workflow_session_id}}"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "description": "Complete end-to-end session lifecycle test"
+        },
+        {
+          "name": "Failover Scenario Test",
+          "item": [
+            {
+              "name": "1. Check Failover Status",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/failover/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "failover",
+                    "status"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "2. Trigger Manual Failover Check",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/failover/check",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "failover",
+                    "check"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "3. List Active Backup Containers",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/api/failover/backups",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "failover",
+                    "backups"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "description": "Test failover system functionality"
+        }
+      ],
+      "description": "Complete workflow tests for different scenarios"
+    },
+    {
+      "name": "Error Scenarios",
+      "item": [
+        {
+          "name": "Create Duplicate Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Duplicate creation fails with 400', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.error).to.include('already exists');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"clientId\": \"test-client\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions"
+              ]
+            },
+            "description": "Try to create a session that already exists"
+          },
+          "response": []
+        },
+        {
+          "name": "Heartbeat Non-existent Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404 for non-existent session', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/non-existent-session/heartbeat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "non-existent-session",
+                "heartbeat"
+              ]
+            },
+            "description": "Try to send heartbeat to non-existent session"
+          },
+          "response": []
+        },
+        {
+          "name": "Stop Non-existent Backup Container",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404 for non-existent backup container', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/failover/backup/non-existent-session",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "failover",
+                "backup",
+                "non-existent-session"
+              ]
+            },
+            "description": "Try to stop non-existent backup container"
+          },
+          "response": []
+        }
+      ],
+      "description": "Error handling and edge case testing"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Set default variables if not already set",
+          "if (!pm.collectionVariables.get('base_url')) {",
+          "    pm.collectionVariables.set('base_url', 'http://localhost:8080');",
+          "}",
+          "if (!pm.collectionVariables.get('username')) {",
+          "    pm.collectionVariables.set('username', 'recorder');",
+          "}",
+          "if (!pm.collectionVariables.get('password')) {",
+          "    pm.collectionVariables.set('password', 'rec0rd3r_2024!');",
+          "}",
+          "if (!pm.collectionVariables.get('session_id')) {",
+          "    pm.collectionVariables.set('session_id', 'test-session-001');",
+          "}",
+          "",
+          "// Set timestamp for requests",
+          "pm.globals.set('timestamp', new Date().toISOString());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global tests for all requests",
+          "pm.test('Response time is reasonable', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(10000);",
+          "});",
+          "",
+          "// Only test JSON content type for successful responses with content",
+          "if (pm.response.code !== 404 && pm.response.headers.get('Content-Type')) {",
+          "    pm.test('Content-Type is application/json', function () {",
+          "        pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "    });",
+          "",
+          "    if (pm.response.headers.get('Content-Type').includes('application/json')) {",
+          "        pm.test('Response is valid JSON', function () {",
+          "            pm.response.to.be.json;",
+          "        });",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ]
+}

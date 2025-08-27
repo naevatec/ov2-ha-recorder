@@ -61,7 +61,7 @@ HA_AWS_SECRET_KEY=N43v4t3c_M1n10
 MINIO_API_PORT=9000
 
 # Additional Configuration
-TAG=latest
+IMAGE_TAG=latest
 MINIO_CONSOLE_PORT=9001
 EOF
     echo
